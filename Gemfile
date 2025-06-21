@@ -73,3 +73,7 @@ gem "ruby-openai", "~> 8.1"
 gem "ollama-ai", "~> 1.3"
 
 gem "colorize", "~> 1.1"
+
+gem "webrick", "~> 1.8"
+
+gem "pry", "~> 0.14"
