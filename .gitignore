@@ -58,3 +58,38 @@ check_scope.rb
 test_*.rb
 simple_test.rb
 reauthenticate.rb
+
+# Build and installation artifacts
+/build/
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+*.app
+*.dmg
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup files
+*.bak
+*.backup
+*.old
