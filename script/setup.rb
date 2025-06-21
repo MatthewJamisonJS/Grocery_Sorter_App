@@ -1,21 +1,40 @@
 #!/usr/bin/env ruby
 
-require 'colorize'
+require 'fileutils'
+require 'json'
+require 'open-uri'
+require 'net/http'
 
-# Load Rails environment
-require_relative '../config/environment'
+# Grocery Sorter App - Automated Setup Script
+# This script handles the complete setup process for new users
 
-require_relative '../app/services/google_auth_service'
-require_relative '../app/services/ollama_service'
+class GrocerySorterSetup
+  def initialize
+    @config_dir = File.join(Dir.pwd, 'config')
+    @client_secrets_path = File.join(@config_dir, 'client_secrets.json')
+    @tokens_path = File.join(@config_dir, 'tokens.yaml')
+    @example_path = File.join(@config_dir, 'client_secrets.example.json')
+  end
 
-class Setup
-  def self.run
-    puts "🔧 Grocery Sorter App Setup".colorize(:cyan)
+  def run
+    puts "🛒 Grocery Sorter App - Setup Wizard"
     puts "=" * 50
 
-    setup_google_api
-    setup_ollama
-    test_integration
+    # Step 1: Check if already configured
+    if already_configured?
+      puts "✅ App is already configured!"
+      puts "   Run: ruby script/grocery_sorter.rb"
+      return
+    end
+
+    # Step 2: Create config directory
+    create_config_directory
+
+    # Step 3: Handle Google API credentials
+    setup_google_credentials
+
+    # Step 4: Test the setup
+    test_setup
 
     puts "\n🎉 Setup complete! You can now run:"
     puts "   ruby script/grocery_sorter.rb"
@@ -23,73 +42,171 @@ class Setup
 
   private
 
-  def self.setup_google_api
-    puts "\n📋 Google API Setup".colorize(:yellow)
-    puts "-" * 30
+  def already_configured?
+    File.exist?(@client_secrets_path) && File.exist?(@tokens_path)
+  end
 
-    if File.exist?('config/client_secrets.json')
-      puts "✅ client_secrets.json found"
-
-      if File.exist?('config/tokens.yaml')
-        puts "✅ tokens.yaml found"
-        puts "🔄 Testing Google API connection..."
-
-        if GoogleAuthService.test_connection
-          puts "✅ Google API is ready!"
-        else
-          puts "❌ Google API connection failed"
-          puts "💡 You may need to re-authenticate"
-        end
-      else
-        puts "⚠️ tokens.yaml not found"
-        puts "💡 Run the app to authenticate with Google"
-      end
-    else
-      puts "❌ client_secrets.json not found"
-      puts "💡 Download from Google Cloud Console:"
-      puts "   1. Go to https://console.cloud.google.com"
-      puts "   2. Create a project or select existing"
-      puts "   3. Enable Google Docs API"
-      puts "   4. Create credentials (OAuth 2.0 Client ID)"
-      puts "   5. Download JSON and save as config/client_secrets.json"
+  def create_config_directory
+    unless Dir.exist?(@config_dir)
+      puts "📁 Creating config directory..."
+      Dir.mkdir(@config_dir)
     end
   end
 
-  def self.setup_ollama
-    puts "\n🤖 Ollama Setup".colorize(:yellow)
+  def setup_google_credentials
+    puts "\n🔐 Google API Credentials Setup"
     puts "-" * 30
 
-    ollama_service = OllamaService.new
+    if File.exist?(@client_secrets_path)
+      puts "✅ Google credentials found"
+      return
+    end
 
-    if ollama_service.test_connection
-      puts "✅ Ollama is running and accessible"
-    else
-      puts "❌ Ollama connection failed"
-      puts "💡 Install and start Ollama:"
-      puts "   1. Install: https://ollama.ai/download"
-      puts "   2. Start: ollama serve"
-      puts "   3. Pull a model: ollama pull llama2"
+    puts "📋 You need Google API credentials to use this app."
+    puts "   This is a one-time setup process."
+
+    choice = get_user_choice(
+      "Choose an option:",
+      [
+        "1. I have credentials - let me paste them",
+        "2. Help me get credentials from Google Cloud Console",
+        "3. Use demo mode (limited functionality)"
+      ]
+    )
+
+    case choice
+    when "1"
+      setup_with_existing_credentials
+    when "2"
+      help_get_credentials
+    when "3"
+      setup_demo_mode
     end
   end
 
-  def self.test_integration
-    puts "\n🧪 Integration Test".colorize(:yellow)
-    puts "-" * 30
+  def setup_with_existing_credentials
+    puts "\n📝 Please paste your Google API credentials JSON:"
+    puts "   (Copy the entire JSON content from your downloaded file)"
+    puts "   Press Enter twice when done:"
 
-    # Test Ollama with sample data
-    ollama_service = OllamaService.new
-    sample_items = [ 'Milk', 'Apples', 'Bread' ]
+    lines = []
+    while (line = gets.chomp) != ""
+      lines << line
+    end
+
+    credentials_json = lines.join("\n")
 
     begin
-      result = ollama_service.categorize_grocery_items(sample_items)
-      puts "✅ Ollama categorization test successful"
-      puts "   Sample result: #{result.first}"
-    rescue StandardError => e
-      puts "❌ Ollama test failed: #{e.message}"
+      # Validate JSON
+      JSON.parse(credentials_json)
+
+      # Save to file
+      File.write(@client_secrets_path, credentials_json)
+      puts "✅ Credentials saved successfully!"
+
+    rescue JSON::ParserError
+      puts "❌ Invalid JSON format. Please try again."
+      setup_with_existing_credentials
     end
+  end
+
+  def help_get_credentials
+    puts "\n🌐 Getting Google API Credentials"
+    puts "-" * 30
+    puts "Follow these steps:"
+    puts ""
+    puts "1. Go to Google Cloud Console:"
+    puts "   https://console.cloud.google.com/"
+    puts ""
+    puts "2. Create a new project or select existing one"
+    puts ""
+    puts "3. Enable the Google Docs API:"
+    puts "   - Go to 'APIs & Services' > 'Library'"
+    puts "   - Search for 'Google Docs API'"
+    puts "   - Click 'Enable'"
+    puts ""
+    puts "4. Create OAuth 2.0 credentials:"
+    puts "   - Go to 'APIs & Services' > 'Credentials'"
+    puts "   - Click 'Create Credentials' > 'OAuth 2.0 Client IDs'"
+    puts "   - Choose 'Desktop application'"
+    puts "   - Download the JSON file"
+    puts ""
+    puts "5. Copy the JSON content and paste it when prompted"
+    puts ""
+
+    input = get_user_input("Press Enter when you have your credentials ready...")
+    setup_with_existing_credentials
+  end
+
+  def setup_demo_mode
+    puts "\n🎭 Setting up Demo Mode"
+    puts "-" * 20
+    puts "Demo mode will use a sample document for testing."
+    puts "Limited functionality but no credentials required."
+
+    # Create a minimal demo credentials file
+    demo_credentials = {
+      "installed" => {
+        "client_id" => "demo-client-id.apps.googleusercontent.com",
+        "project_id" => "demo-project",
+        "auth_uri" => "https://accounts.google.com/o/oauth2/auth",
+        "token_uri" => "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url" => "https://www.googleapis.com/oauth2/v1/certs",
+        "client_secret" => "demo-secret",
+        "redirect_uris" => [ "http://localhost" ]
+      }
+    }
+
+    File.write(@client_secrets_path, JSON.pretty_generate(demo_credentials))
+    puts "✅ Demo mode configured!"
+    puts "   Note: You'll need real credentials for full functionality"
+  end
+
+  def test_setup
+    puts "\n🧪 Testing Setup"
+    puts "-" * 15
+
+    unless File.exist?(@client_secrets_path)
+      puts "❌ Google credentials not found"
+      return false
+    end
+
+    begin
+      credentials = JSON.parse(File.read(@client_secrets_path))
+      if credentials["installed"] && credentials["installed"]["client_id"]
+        puts "✅ Google credentials look valid"
+        true
+      else
+        puts "❌ Invalid credentials format"
+        false
+      end
+    rescue JSON::ParserError
+      puts "❌ Invalid JSON in credentials file"
+      false
+    end
+  end
+
+  def get_user_choice(prompt, options)
+    puts prompt
+    options.each { |option| puts "   #{option}" }
+
+    loop do
+      choice = get_user_input("Enter your choice (1-#{options.length}): ")
+      if (1..options.length).include?(choice.to_i)
+        return choice
+      end
+      puts "❌ Invalid choice. Please try again."
+    end
+  end
+
+  def get_user_input(prompt)
+    print "#{prompt} "
+    gets.chomp
   end
 end
 
+# Run the setup if this script is executed directly
 if __FILE__ == $0
-  Setup.run
+  setup = GrocerySorterSetup.new
+  setup.run
 end
