@@ -32,3 +32,29 @@
 
 # Ignore master key for decrypting credentials and more.
 /config/master.key
+
+# Security: Ignore sensitive Google API credentials and tokens
+/config/client_secrets.json
+/config/tokens.yaml
+/config/credentials.yml.enc
+
+# Security: Ignore any other credential files
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Security: Ignore environment-specific configuration
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Security: Ignore debug and test files that might contain sensitive data
+debug_oauth.rb
+check_oauth_account.rb
+check_scope.rb
+test_*.rb
+simple_test.rb
+reauthenticate.rb

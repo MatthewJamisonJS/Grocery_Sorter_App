@@ -9,14 +9,31 @@ A desktop application built with Glimmer DSL for LibUI that helps you organize g
 - 📄 **Google Docs Integration**: Import grocery lists directly from Google Docs
 - 💾 **Export Functionality**: Save categorized lists as JSON files
 - 🖥️ **Cross-Platform Desktop App**: Built with Glimmer DSL for LibUI
+- 🚀 **One-Command Setup**: Automatic setup wizard for new users
 
 ## Prerequisites
 
 - Ruby 3.0+
-- Google Cloud Project with Google Docs API enabled
-- Ollama installed and running locally
+- Google Cloud Project with Google Docs API enabled (optional - demo mode available)
+- Ollama installed and running locally (optional - for AI categorization)
 
-## Quick Start
+## 🚀 Quick Start (Recommended)
+
+**Just run one command and follow the setup wizard:**
+
+```bash
+./grocery_sorter
+```
+
+The app will automatically:
+- ✅ Check if setup is needed
+- 🔧 Run the setup wizard if it's your first time
+- 🚀 Launch the application
+- 📋 Guide you through Google API setup (if needed)
+
+## Alternative Setup
+
+If you prefer manual setup:
 
 1. **Install dependencies**:
    ```bash
@@ -33,9 +50,26 @@ A desktop application built with Glimmer DSL for LibUI that helps you organize g
    ruby script/grocery_sorter.rb
    ```
 
-## Detailed Setup
+## Setup Options
 
-### Google API Setup
+The setup wizard offers three options:
+
+### 1. **I have credentials** (Recommended)
+- Paste your existing Google API credentials
+- Full functionality immediately
+
+### 2. **Help me get credentials**
+- Step-by-step guide to Google Cloud Console
+- Automatic credential validation
+
+### 3. **Demo mode**
+- No credentials required
+- Limited functionality for testing
+- Perfect for trying out the app
+
+## Google API Setup (Optional)
+
+If you want full Google Docs integration:
 
 1. **Create a Google Cloud Project**:
    - Go to [Google Cloud Console](https://console.cloud.google.com)
@@ -52,11 +86,14 @@ A desktop application built with Glimmer DSL for LibUI that helps you organize g
    - Choose "Desktop application"
    - Download the JSON file
 
-4. **Configure the App**:
-   - Save the downloaded JSON as `config/client_secrets.json`
-   - The app will handle authentication on first run
+4. **Use the setup wizard**:
+   - Run `./grocery_sorter`
+   - Choose option 1 or 2
+   - Paste your credentials when prompted
 
-### Ollama Setup
+## Ollama Setup (Optional)
+
+For AI categorization features:
 
 1. **Install Ollama**:
    - Download from [ollama.ai](https://ollama.ai/download)
@@ -76,6 +113,12 @@ A desktop application built with Glimmer DSL for LibUI that helps you organize g
 
 ### Starting the Application
 
+**Simple way:**
+```bash
+./grocery_sorter
+```
+
+**Manual way:**
 ```bash
 ruby script/grocery_sorter.rb
 ```
@@ -83,7 +126,7 @@ ruby script/grocery_sorter.rb
 ### Features
 
 - **Test Connections**: Verify Google API and Ollama are working
-- **Load from Google Docs**: Import grocery lists using a document ID
+- **Load from Google Docs**: Import grocery lists using a document URL or ID
 - **Manual Entry**: Add items one by one
 - **AI Categorization**: Automatically sort items into store aisles
 - **Export**: Save categorized lists as JSON files
@@ -91,9 +134,10 @@ ruby script/grocery_sorter.rb
 ### Google Docs Integration
 
 1. Create a Google Doc with your grocery list (one item per line)
-2. Copy the document ID from the URL
-3. Paste it into the "Document ID" field
-4. Click "Load from Google Docs"
+2. Copy the document URL or ID
+3. Paste it into the "Document URL or ID" field
+4. Enter your Google email
+5. Click "Load from Google Docs"
 
 ### AI Categorization
 
@@ -116,7 +160,7 @@ The app uses Ollama to intelligently categorize grocery items into common store 
 
 - **Authentication Error**: Run the app and follow the authentication flow
 - **Permission Denied**: Ensure Google Docs API is enabled in your project
-- **Invalid Credentials**: Check that `client_secrets.json` is properly formatted
+- **Invalid Credentials**: Use the setup wizard to re-enter credentials
 
 ### Ollama Issues
 
@@ -130,6 +174,16 @@ The app uses Ollama to intelligently categorize grocery items into common store 
 - **Permission Errors**: Ensure you have write access to the config directory
 - **Network Issues**: Check your internet connection for Google API calls
 
+## Security
+
+This app handles sensitive Google API credentials. See [SECURITY.md](SECURITY.md) for important security information.
+
+**Key security points:**
+- ✅ Credentials are stored locally only
+- ✅ No credentials are sent to external servers
+- ✅ OAuth tokens are encrypted
+- ❌ Never commit credentials to version control
+
 ## Development
 
 ### Project Structure
@@ -142,10 +196,12 @@ grocery_sorter_app/
 │   └── ollama_service.rb           # Ollama AI integration
 ├── script/
 │   ├── grocery_sorter.rb           # Main Glimmer application
-│   └── setup.rb                    # Setup and testing script
+│   └── setup.rb                    # Automated setup wizard
+├── grocery_sorter                  # Smart launcher script
 └── config/
-    ├── client_secrets.json         # Google API credentials
-    └── tokens.yaml                 # Google API tokens
+    ├── client_secrets.example.json # Example credentials file
+    ├── client_secrets.json         # Google API credentials (user-provided)
+    └── tokens.yaml                 # Google API tokens (auto-generated)
 ```
 
 ### Adding New Features
