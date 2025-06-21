@@ -1,6 +1,6 @@
 # Grocery Sorter App
 
-A desktop application built with Glimmer DSL for LibUI that helps you organize grocery lists by automatically categorizing items into store aisles using AI.
+A cross-platform desktop application built with Glimmer DSL for LibUI that helps you organize grocery lists by automatically categorizing items into store aisles using AI.
 
 ## Features
 
@@ -8,8 +8,9 @@ A desktop application built with Glimmer DSL for LibUI that helps you organize g
 - 🤖 **AI-Powered Categorization**: Uses Ollama to intelligently sort items into store aisles
 - 📄 **Google Docs Integration**: Import grocery lists directly from Google Docs
 - 💾 **Export Functionality**: Save categorized lists as JSON files
-- 🖥️ **Cross-Platform Desktop App**: Built with Glimmer DSL for LibUI
+- 🖥️ **Cross-Platform Desktop App**: Built with Glimmer DSL for LibUI (macOS & Linux)
 - 🚀 **One-Command Setup**: Automatic setup wizard for new users
+- 🔧 **Easy Installation**: Makefile and install scripts for both platforms
 
 ## Prerequisites
 
@@ -18,6 +19,8 @@ A desktop application built with Glimmer DSL for LibUI that helps you organize g
 - Ollama installed and running locally (optional - for AI categorization)
 
 ## 🚀 Quick Start (Recommended)
+
+### macOS & Linux - One Command Setup
 
 **Just run one command and follow the setup wizard:**
 
@@ -31,24 +34,69 @@ The app will automatically:
 - 🚀 Launch the application
 - 📋 Guide you through Google API setup (if needed)
 
-## Alternative Setup
+### Linux - Alternative Installation Methods
 
-If you prefer manual setup:
+#### Option 1: Using Make (Recommended)
+```bash
+# Quick start with automatic dependency installation
+make quickstart
 
-1. **Install dependencies**:
-   ```bash
-   bundle install
-   ```
+# Or step by step:
+make deps      # Install system dependencies
+make setup     # Run setup wizard
+make install   # Install system-wide
+```
 
-2. **Run the setup script**:
-   ```bash
-   ruby script/setup.rb
-   ```
+#### Option 2: Using Install Script
+```bash
+# Make executable and run
+chmod +x install.sh
+./install.sh
 
-3. **Start the application**:
-   ```bash
-   ruby script/grocery_sorter.rb
-   ```
+# Or uninstall later
+./install.sh uninstall
+```
+
+#### Option 3: Manual Installation
+```bash
+# Install Ruby and dependencies
+sudo apt-get update && sudo apt-get install -y ruby ruby-dev build-essential  # Ubuntu/Debian
+sudo dnf install -y ruby ruby-devel gcc  # Fedora/RHEL
+sudo pacman -S ruby base-devel  # Arch Linux
+
+# Install Ruby gems
+bundle install
+
+# Run setup and install
+ruby script/setup.rb
+sudo cp grocery_sorter /usr/local/bin/
+```
+
+### macOS - Alternative Installation
+
+#### Using Homebrew (Recommended)
+```bash
+# Install Ruby via Homebrew
+brew install ruby
+
+# Install Ruby gems
+bundle install
+
+# Run setup and install
+ruby script/setup.rb
+sudo cp grocery_sorter /usr/local/bin/
+```
+
+#### Using Make
+```bash
+# Quick start
+make quickstart
+
+# Or step by step:
+make deps      # Install Ruby via Homebrew
+make setup     # Run setup wizard
+make install   # Install system-wide
+```
 
 ## Setup Options
 
@@ -118,9 +166,19 @@ For AI categorization features:
 ./grocery_sorter
 ```
 
+**After installation:**
+```bash
+grocery_sorter
+```
+
 **Manual way:**
 ```bash
 ruby script/grocery_sorter.rb
+```
+
+**Using Make:**
+```bash
+make run
 ```
 
 ### Features
@@ -168,23 +226,42 @@ The app uses Ollama to intelligently categorize grocery items into common store 
 - **Model Not Found**: Pull the required model (`ollama pull llama2`)
 - **Slow Responses**: Consider using a smaller model or upgrading hardware
 
+### Linux-Specific Issues
+
+- **Ruby Not Found**: Install Ruby via your package manager (see installation options above)
+- **Permission Denied**: Ensure you have sudo access for installation
+- **Missing Dependencies**: Run `make deps` or `./install.sh` to install system dependencies
+- **Package Manager Not Supported**: Install Ruby manually from [ruby-lang.org](https://www.ruby-lang.org/en/documentation/installation/)
+
+### macOS-Specific Issues
+
+- **Ruby Version Conflicts**: Use Homebrew Ruby instead of system Ruby
+- **Permission Issues**: Ensure Homebrew is properly installed and configured
+- **Missing Dependencies**: Run `make deps` to install via Homebrew
+
 ### General Issues
 
 - **Missing Dependencies**: Run `bundle install`
 - **Permission Errors**: Ensure you have write access to the config directory
 - **Network Issues**: Check your internet connection for Google API calls
 
-## Security
-
-This app handles sensitive Google API credentials. See [SECURITY.md](SECURITY.md) for important security information.
-
-**Key security points:**
-- ✅ Credentials are stored locally only
-- ✅ No credentials are sent to external servers
-- ✅ OAuth tokens are encrypted
-- ❌ Never commit credentials to version control
-
 ## Development
+
+### Available Make Commands
+
+```bash
+make help       # Show all available commands
+make check      # Check system requirements
+make deps       # Install system dependencies
+make setup      # Run setup wizard
+make install    # Install app system-wide
+make uninstall  # Remove app from system
+make test       # Test app functionality
+make run        # Run app directly
+make clean      # Clean build artifacts
+make dev        # Setup development environment
+make quickstart # Complete setup and installation
+```
 
 ### Project Structure
 
@@ -198,6 +275,8 @@ grocery_sorter_app/
 │   ├── grocery_sorter.rb           # Main Glimmer application
 │   └── setup.rb                    # Automated setup wizard
 ├── grocery_sorter                  # Smart launcher script
+├── install.sh                      # Linux installation script
+├── Makefile                        # Cross-platform build system
 └── config/
     ├── client_secrets.example.json # Example credentials file
     ├── client_secrets.json         # Google API credentials (user-provided)
@@ -209,6 +288,16 @@ grocery_sorter_app/
 1. **New AI Models**: Modify `OllamaService` to support different models
 2. **Additional APIs**: Create new service classes following the existing pattern
 3. **UI Enhancements**: Extend the Glimmer DSL interface in `grocery_sorter.rb`
+
+## Security
+
+This app handles sensitive Google API credentials. See [SECURITY.md](SECURITY.md) for important security information.
+
+**Key security points:**
+- ✅ Credentials are stored locally only
+- ✅ No credentials are sent to external servers
+- ✅ OAuth tokens are encrypted
+- ❌ Never commit credentials to version control
 
 ## Contributing
 
