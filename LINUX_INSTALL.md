@@ -11,18 +11,43 @@ This guide provides detailed instructions for installing the Grocery Sorter App 
 
 ## Quick Installation
 
-### Option 1: One-Command Setup (Recommended)
+### Step 1: Get the App
 
+**Option A: Download from GitHub (Easiest)**
+1. Go to the [GitHub repository](https://github.com/MatthewJamisonJS/Grocery_Sorter_App)
+2. Click the green "Code" button
+3. Click "Download ZIP"
+4. Extract the ZIP file to a folder on your computer
+5. Open Terminal and navigate to the extracted folder
+
+**Option B: Clone with Git (For developers)**
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/grocery_sorter_app.git
-cd grocery_sorter_app
+git clone https://github.com/MatthewJamisonJS/Grocery_Sorter_App.git
 
-# Run the smart launcher (handles setup automatically)
+# Navigate into the project folder
+cd Grocery_Sorter_App
+```
+
+### Step 2: Install and Run
+
+#### Option 1: One-Command Setup (Recommended)
+
+Once you're in the project folder:
+
+```bash
+# Make the launcher executable and run
+chmod +x grocery_sorter
 ./grocery_sorter
 ```
 
-### Option 2: Using Make
+The app will automatically:
+- ✅ Check if setup is needed
+- 🔧 Run the setup wizard if it's your first time
+- 🚀 Launch the application
+- 📋 Guide you through Google API setup (if needed)
+
+#### Option 2: Using Make
 
 ```bash
 # Quick start with automatic dependency installation
@@ -34,7 +59,7 @@ make setup     # Run setup wizard
 make install   # Install system-wide
 ```
 
-### Option 3: Using Install Script
+#### Option 3: Using Install Script
 
 ```bash
 # Make executable and run

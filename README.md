@@ -20,9 +20,29 @@ A cross-platform desktop application built with Glimmer DSL for LibUI that helps
 
 ## 🚀 Quick Start (Recommended)
 
-### macOS & Linux - One Command Setup
+### Step 1: Get the App
 
-**Just run one command and follow the setup wizard:**
+**Option A: Download from GitHub (Easiest)**
+1. Go to the [GitHub repository](https://github.com/MatthewJamisonJS/Grocery_Sorter_App)
+2. Click the green "Code" button
+3. Click "Download ZIP"
+4. Extract the ZIP file to a folder on your computer
+5. Open Terminal/Command Prompt and navigate to the extracted folder
+
+**Option B: Clone with Git (For developers)**
+```bash
+# Clone the repository
+git clone https://github.com/MatthewJamisonJS/Grocery_Sorter_App.git
+
+# Navigate into the project folder
+cd Grocery_Sorter_App
+```
+
+### Step 2: Run the App
+
+**macOS & Linux - One Command Setup**
+
+Once you're in the project folder, just run:
 
 ```bash
 ./grocery_sorter
@@ -33,6 +53,12 @@ The app will automatically:
 - 🔧 Run the setup wizard if it's your first time
 - 🚀 Launch the application
 - 📋 Guide you through Google API setup (if needed)
+
+**If you get a permission error, make the script executable:**
+```bash
+chmod +x grocery_sorter
+./grocery_sorter
+```
 
 ### Linux - Alternative Installation Methods
 
