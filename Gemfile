@@ -83,3 +83,5 @@ gem "concurrent-ruby", "~> 1.2"
 gem "prawn", "~> 2.4"
 
 gem "prawn-table", "~> 0.2"
+
+gem "clipboard", "~> 1.3"

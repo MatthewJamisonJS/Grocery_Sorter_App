@@ -9,6 +9,7 @@ require 'os'
 require 'prawn'
 require 'prawn/table'
 require 'concurrent-ruby'
+require 'clipboard'
 
 # Load application services
 require_relative '../app/services/google_auth_service'
@@ -19,7 +20,7 @@ require_relative '../app/services/ollama_service'
 class Presenter
   include Glimmer::DataBinding::ObservableModel
 
-  attr_accessor :google_doc_url, :batch_text, :items, :status_text, :download_enabled
+  attr_accessor :google_doc_url, :batch_text, :items, :status_text, :download_enabled, :clipboard_loaded
 
   def initialize
     @google_doc_url = ''
@@ -27,6 +28,7 @@ class Presenter
     @items = [ [ '', '', '' ] ] # Start with a blank row
     @status_text = 'Welcome to Grocery Sorter!'
     @download_enabled = false
+    @clipboard_loaded = false
     @all_processed_items = []
 
     # Initialize services in the background
@@ -94,6 +96,12 @@ class Presenter
 
   def attach_main_window(window)
     @main_window = window
+  end
+
+  def load_from_clipboard
+    self.batch_text = Clipboard.paste
+    self.clipboard_loaded = true
+    process_batch_text
   end
 
   private
@@ -174,13 +182,15 @@ class UI
     group('Lightning-Fast Batch Processing') {
       stretchy false
       vertical_box {
-        non_wrapping_multiline_entry {
-          text <=> [ presenter, :batch_text ]
+        horizontal_box {
+          button('Load from Clipboard') {
+            on_clicked { presenter.load_from_clipboard }
+          }
+          label('✅') {
+            visible <= [ presenter, :clipboard_loaded ]
+          }
         }
         horizontal_box {
-          button('Process Pasted List') {
-            on_clicked { presenter.process_batch_text }
-          }
           button('Download PDF Report') {
             enabled <=> [ presenter, :download_enabled ]
             on_clicked { presenter.download_pdf_report }
