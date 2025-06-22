@@ -98,11 +98,13 @@ jobs:
 
       - name: Run basic functionality test
         run: |
-          # Test that the app can be loaded without errors
+          # Test that the app services can be loaded without errors
           ruby -e "
             require 'bundler/setup'
-            require_relative 'script/grocery_sorter'
-            puts '✅ App loads successfully'
+            require_relative 'app/services/google_auth_service'
+            require_relative 'app/services/google_docs_service'
+            require_relative 'app/services/ollama_service'
+            puts '✅ All services load successfully'
           "
 
       - name: Test setup wizard (dry run)
