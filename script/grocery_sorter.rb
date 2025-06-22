@@ -6,8 +6,6 @@ require 'colorize'
 require_relative '../config/environment'
 
 # Load our custom services
-require_relative '../app/services/google_auth_service'
-require_relative '../app/services/google_docs_service'
 require_relative '../app/services/ollama_service'
 
 # Main GUI class for the Grocery Sorter App
@@ -23,7 +21,6 @@ class GrocerySorterGUI
     @table_data = []  # Array to hold grocery items for the table
 
     # Step 2: Initialize service connections
-    @google_docs_service = nil
     @ollama_service = OllamaService.new
 
     # Step 3: Set up services
@@ -73,41 +70,56 @@ class GrocerySorterGUI
 
   # Section 2: Create Google Docs integration section
   def create_google_docs_section
-    group('Google Docs Integration') {
+    group('Google Docs Integration (DISABLED)') {
       vertical_box {
-        # NOTE: Google Docs integration is currently DISABLED. The app does NOT connect to Google API. All Google Docs features are non-functional until further notice.
-        # Email input field
+        # Google Docs integration is currently DISABLED
+        label('🚫 Google Docs integration is currently DISABLED') {
+          stretchy false
+        }
+        label('   The app does NOT connect to Google API') {
+          stretchy false
+        }
+        label('   All Google Docs features are non-functional') {
+          stretchy false
+        }
+        label('   Use manual entry or clipboard paste instead') {
+          stretchy false
+        }
+
+        # Disabled input fields
         horizontal_box {
           label('Your Google Email:') {
             stretchy false
           }
           @email_entry = entry {
             text ''
+            enabled false
           }
         }
 
-        # Document URL/ID input and action buttons
+        # Disabled document input
         horizontal_box {
           label('Document URL or ID:') {
             stretchy false
           }
           @doc_id_entry = entry {
-            # Pre-fill with a sample Google Doc for testing
-            text 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit'
+            text 'Google Docs integration disabled'
+            enabled false
           }
           button('Test Access') {
             stretchy false
-            on_clicked { test_document_access }
+            enabled false
+            on_clicked {
+              @status_label.text = "Google Docs integration is disabled"
+            }
           }
           button('Load from Google Docs') {
             stretchy false
-            on_clicked { load_from_google_docs }
+            enabled false
+            on_clicked {
+              @status_label.text = "Google Docs integration is disabled"
+            }
           }
-        }
-
-        # Helpful tip for users
-        label('💡 Tip: Enter your Google email and paste the full Google Docs URL') {
-          stretchy false
         }
       }
     }
@@ -115,7 +127,7 @@ class GrocerySorterGUI
 
   # Section 3: Create manual entry section
   def create_manual_entry_section
-    group('Manual Entry') {
+    group('Manual Entry & Clipboard') {
       vertical_box {
         # Item input and add button
         horizontal_box {
@@ -131,8 +143,12 @@ class GrocerySorterGUI
           }
         }
 
-        # Utility buttons
+        # Clipboard paste functionality
         horizontal_box {
+          button('Paste from Clipboard') {
+            stretchy false
+            on_clicked { paste_from_clipboard }
+          }
           button('Clear All') {
             stretchy false
             on_clicked { clear_all_items }
@@ -187,106 +203,27 @@ class GrocerySorterGUI
 
   # Step 3: Set up service connections
   def setup_services
-    begin
-      # Initialize Google Docs service (this will trigger OAuth if needed)
-      @google_docs_service = GoogleDocsService.new
-    rescue StandardError => e
-      puts "⚠️ Google Docs service not available: #{e.message}"
-    end
+    # Skip Google authentication entirely - app works without Google API
+    puts "✅ App initialized without Google authentication"
+    puts "   Google Docs features are disabled"
+    puts "   Core functionality (AI categorization, PDF export) is available"
   end
 
   # Test all external service connections
   def test_all_connections
     @status_label.text = "Testing connections..."
 
-    # Test Google API connection
-    google_ok = GoogleAuthService.test_connection
+    # Skip Google API connection test (authentication disabled)
+    puts "⏭️ Skipping Google API test (authentication disabled)"
 
     # Test Ollama AI service connection
     ollama_ok = @ollama_service.test_connection
 
     # Update status based on test results
-    if google_ok && ollama_ok
-      @status_label.text = "✅ All connections successful!"
+    if ollama_ok
+      @status_label.text = "✅ Ollama connection successful! (Google API disabled)"
     else
-      @status_label.text = "⚠️ Some connections failed. Check console for details."
-    end
-  end
-
-  # Load grocery items from a Google Doc
-  def load_from_google_docs
-    return unless @google_docs_service
-
-    # Step 1: Get user input
-    doc_input = @doc_id_entry.text.strip
-    user_email = @email_entry.text.strip
-
-    # Step 2: Validate input
-    return if doc_input.empty?
-
-    if user_email.empty?
-      @status_label.text = "⚠️ Please enter your Google email first"
-      return
-    end
-
-    # Step 3: Load items from Google Docs
-    @status_label.text = "Loading from Google Docs..."
-
-    begin
-      items = @google_docs_service.get_grocery_items(doc_input, user_email)
-
-      if items.any?
-        # Convert items to table format: [item_name, aisle, source_icon]
-        self.table_data = items.map { |item| [ item, 'Pending', '📄' ] }
-        @status_label.text = "✅ Loaded #{items.length} items from Google Docs"
-      else
-        @status_label.text = "⚠️ No items found or access denied"
-      end
-    rescue StandardError => e
-      @status_label.text = "❌ Failed to load from Google Docs: #{e.message}"
-    end
-  end
-
-  # Test if we can access a specific Google Doc
-  def test_document_access
-    return unless @google_docs_service
-
-    # Step 1: Get user input
-    doc_input = @doc_id_entry.text.strip
-    user_email = @email_entry.text.strip
-
-    # Step 2: Validate input
-    return if doc_input.empty?
-
-    if user_email.empty?
-      @status_label.text = "⚠️ Please enter your Google email first"
-      return
-    end
-
-    # Step 3: Test document access
-    @status_label.text = "Testing document access..."
-
-    begin
-      result = @google_docs_service.test_document_access(doc_input, user_email)
-
-      if result[:success]
-        # Access successful - show document details
-        @status_label.text = "✅ Access successful! Title: #{result[:title]}"
-        puts "📄 Document Details:"
-        puts "   Title: #{result[:title]}"
-        puts "   Last Modified: #{result[:last_modified]}"
-        puts "   Permission ID: #{result[:permission_id]}"
-      else
-        # Access failed - show error and guidance
-        @status_label.text = "❌ Access failed: #{result[:error]}"
-        puts "❌ Access Error: #{result[:error]}"
-        puts "🔧 Error Class: #{result[:error_class]}"
-
-        # Provide specific guidance for unauthorized errors
-        @google_docs_service.get_user_guidance_for_unauthorized(result)
-      end
-    rescue StandardError => e
-      @status_label.text = "❌ Test failed: #{e.message}"
+      @status_label.text = "⚠️ Ollama connection failed. Check console for details."
     end
   end
 
@@ -303,6 +240,38 @@ class GrocerySorterGUI
 
     # Update status
     @status_label.text = "Added: #{item}"
+  end
+
+  # Paste items from clipboard
+  def paste_from_clipboard
+    begin
+      # Use system clipboard command
+      clipboard_content = `pbpaste 2>/dev/null || xclip -selection clipboard -o 2>/dev/null || xsel --clipboard --output 2>/dev/null`
+
+      if clipboard_content.strip.empty?
+        @status_label.text = "⚠️ Clipboard is empty"
+        return
+      end
+
+      # Split clipboard content into lines and filter out empty lines
+      items = clipboard_content.split(/\r?\n/).map(&:strip).reject(&:empty?)
+
+      if items.empty?
+        @status_label.text = "⚠️ No valid items found in clipboard"
+        return
+      end
+
+      # Add items to table data with clipboard indicator
+      items.each do |item|
+        self.table_data = table_data + [ [ item, 'Pending', '📋' ] ]
+      end
+
+      @status_label.text = "✅ Pasted #{items.length} items from clipboard"
+
+    rescue StandardError => e
+      @status_label.text = "❌ Failed to paste from clipboard: #{e.message}"
+      puts "Clipboard error: #{e.message}"
+    end
   end
 
   # Clear all items from the grocery list

@@ -8,29 +8,20 @@ require 'fileutils'
 class GrocerySorterLauncher
   def initialize
     @config_dir = File.join(Dir.pwd, 'config')
-    @client_secrets_path = File.join(@config_dir, 'client_secrets.json')
-    @tokens_path = File.join(@config_dir, 'tokens.yaml')
   end
 
   def launch
     puts "🛒 Grocery Sorter App"
     puts "=" * 30
 
-    # Check if setup is needed
+    # Check if basic setup is needed
     if setup_needed?
       puts "🔧 First-time setup detected..."
-      puts "   Running setup wizard..."
+      puts "   Running basic setup..."
       puts ""
 
       # Run the setup script
       system("ruby script/setup.rb")
-
-      # Check if setup was successful
-      unless setup_complete?
-        puts ""
-        puts "❌ Setup incomplete. Please run: ruby script/setup.rb"
-        exit 1
-      end
 
       puts ""
       puts "✅ Setup complete! Launching app..."
@@ -39,17 +30,23 @@ class GrocerySorterLauncher
 
     # Launch the main app
     puts "🚀 Starting Grocery Sorter App..."
+    puts "   No authentication required!"
+    puts "   Google Docs integration is disabled"
+    puts "   Core functionality is available"
+    puts ""
     system("ruby script/grocery_sorter.rb")
   end
 
   private
 
   def setup_needed?
-    !File.exist?(@client_secrets_path) || !File.exist?(@tokens_path)
+    # Only check for basic Rails setup, not Google credentials
+    !File.exist?(File.join(@config_dir, 'application.rb'))
   end
 
   def setup_complete?
-    File.exist?(@client_secrets_path) && File.exist?(@tokens_path)
+    # Basic setup is complete if Rails config exists
+    File.exist?(File.join(@config_dir, 'application.rb'))
   end
 end
 
