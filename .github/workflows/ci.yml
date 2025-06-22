@@ -56,7 +56,16 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    # services:
+    #  redis:
+    #    image: redis
+    #    ports:
+    #      - 6379:6379
+    #    options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
+      - name: Install packages
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y build-essential git libyaml-dev pkg-config google-chrome-stable
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -66,62 +75,16 @@ jobs:
           ruby-version: .ruby-version
           bundler-cache: true
 
-      - name: Install system dependencies for desktop app
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
-            build-essential \
-            git \
-            libyaml-dev \
-            pkg-config \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libcairo2-dev \
-            libpango1.0-dev \
-            libatk1.0-dev \
-            libgdk-pixbuf2.0-dev \
-            libglib2.0-dev
+      - name: Run tests
+        env:
+          RAILS_ENV: test
+          # REDIS_URL: redis://localhost:6379/0
+        run: bin/rails db:test:prepare test test:system
 
-      - name: Test Ruby syntax
-        run: |
-          ruby -c script/grocery_sorter.rb
-          ruby -c script/setup.rb
-          ruby -c app/services/google_auth_service.rb
-          ruby -c app/services/google_docs_service.rb
-          ruby -c app/services/ollama_service.rb
-
-      - name: Test Makefile syntax
-        run: make -n help
-
-      - name: Test installation script syntax
-        run: bash -n install.sh
-
-      - name: Run basic functionality test
-        run: |
-          ruby -e "
-            require 'bundler/setup'
-            require 'json'
-            require 'fileutils'
-            require_relative 'app/services/google_auth_service'
-            puts 'Testing GoogleAuthService...'
-            status, msg = GoogleAuthService.validate_credentials!
-            puts msg
-            unless [:valid, :created].include?(status)
-              puts '❌ Credentials file is not valid or could not be created.'
-              exit 1
-            end
-            puts 'Testing GoogleDocsService...'
-            require_relative 'app/services/google_docs_service'
-            puts 'Testing OllamaService...'
-            require_relative 'app/services/ollama_service'
-            puts '✅ All services load successfully'
-          "
-
-      - name: Test setup wizard (dry run)
-        run: |
-          # Test setup script can be loaded
-          ruby -e "
-            require 'bundler/setup'
-            require_relative 'script/setup'
-            puts '✅ Setup script loads successfully'
-          "
+      - name: Keep screenshots from failed system tests
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: screenshots
+          path: ${{ github.workspace }}/tmp/screenshots
+          if-no-files-found: ignore

@@ -38,8 +38,6 @@ class GrocerySorterSetup
 
     puts "\n🎉 Setup complete! You can now run:"
     puts "   ruby script/grocery_sorter.rb"
-    puts "\n💡 Pro tip: The app will automatically create the credentials file"
-    puts "   on first run if it doesn't exist, so you can also just run the app directly!"
   end
 
   private

@@ -2,167 +2,136 @@ require "net/http"
 require "json"
 require "uri"
 
-# Load the refactored components
-require_relative "ollama/client"
-require_relative "ollama/health_checker"
-require_relative "ollama/categorizer"
-
 class OllamaService
-  # This remains here as it's a core part of the prompt contract.
-  AISLES = [
-    "Produce", "Dairy & Eggs", "Meat & Seafood", "Bakery", "Pantry",
-    "Frozen Foods", "Beverages", "Snacks", "Condiments & Sauces", "Household & Cleaning",
-    "Health & Beauty", "Pet Supplies", "Baby Care", "Electronics", "Toys & Games",
-    "Clothing & Apparel", "General Merchandise"
-  ].freeze
-
-  SECURITY_CONFIG = {
-    timeout_settings: {
-      open_timeout: 15,
-      read_timeout: 90,
-      keep_alive_timeout: 30
-    },
-    server_health: {
-      max_consecutive_failures: 3,
-      health_check_interval: 5
-    },
-    model_pull: {
-      pull_in_progress_timeout: 300
-    }
-  }
-
-  def initialize(host: "http://localhost:11434", model: "incept5/llama3.1-claude:latest", api_key: nil)
+  def initialize(host: "http://localhost:11434", model: "llama3.3:latest")
     @host = host
     @model = model
-    @cache = {}
-    @batch_size = 3
-
-    # Initialize the new components
-    @client = Ollama::Client.new(host: host, model: model, api_key: api_key, security_config: SECURITY_CONFIG)
-    @health_checker = Ollama::HealthChecker.new(@client, SECURITY_CONFIG)
-    @categorizer = Ollama::Categorizer.new(@client, model: model, health_checker: @health_checker)
-
-    initialize_common_items_cache
-    puts "✅ OllamaService initialized with new architecture."
+    @base_url = "#{host}/api"
   end
 
-  # The main entry point for batch categorization.
-  def categorize_grocery_items_batch(items, progress_callback = nil)
-    return [] if items.empty?
+  def categorize_grocery_items(items)
+    prompt = build_categorization_prompt(items)
 
-    # Step 1: Check cache for instant results
-    cache_hits, uncached_items = check_cache(items)
-    processed_items = cache_hits
-    progress_callback&.call("📋 Found #{cache_hits.length} items in cache, processing #{uncached_items.length} new items...")
-
-    # Step 2: Process uncached items in batches
-    if uncached_items.any?
-      batches = uncached_items.each_slice(@batch_size).to_a
-      total_batches = batches.length
-
-      batches.each_with_index do |batch, index|
-        progress_callback&.call("🔄 Processing batch #{index + 1}/#{total_batches}...")
-
-        # Delegate categorization to the new Categorizer class
-        result = @categorizer.categorize(batch)
-        processed_items.concat(result)
-
-        # Update cache with new results
-        result.each do |item|
-          @cache[item[:product].downcase.strip] = item[:aisle] if item && item[:product] && item[:aisle]
-        end
-      end
+    begin
+      response = generate_response(prompt)
+      parse_categorization_response(response, items)
+    rescue StandardError => e
+      puts "❌ Ollama API Error: #{e.message}"
+      fallback_categorization(items)
     end
-
-    progress_callback&.call("✅ Batch processing complete!")
-    processed_items
   end
 
-  # Cleanup connections by delegating to the client
-  def cleanup_connections
-    @client.cleanup_connections
-  end
+  def test_connection
+    begin
+      uri = URI("#{@base_url}/tags")
+      response = Net::HTTP.get_response(uri)
 
-  def get_service_status
-    {
-      host: @host,
-      model: @model,
-      batch_size: @batch_size,
-      cache_size: @cache.size,
-      consecutive_failures: @health_checker.consecutive_failures,
-      model_pull_detected: @health_checker.model_pull_detected,
-      server_healthy: @health_checker.server_healthy?
-    }
+      if response.code == "200"
+        puts "✅ Ollama connection successful!"
+        puts "📋 Available models: #{JSON.parse(response.body)['models']&.map { |m| m['name'] }&.join(', ')}"
+        true
+      else
+        puts "❌ Ollama connection failed! Status: #{response.code}"
+        false
+      end
+    rescue StandardError => e
+      puts "❌ Ollama connection failed: #{e.message}"
+      puts "🔧 Make sure Ollama is running: ollama serve"
+      false
+    end
   end
 
   private
 
-  def check_cache(items)
-    cache_hits = []
-    uncached_items = []
-    items.each do |item|
-      item_lower = item.downcase.strip
-      if @cache[item_lower]
-        cache_hits << { product: item, aisle: @cache[item_lower], notes: "From cache" }
-      else
-        uncached_items << item
-      end
-    end
-    [ cache_hits, uncached_items ]
+  def build_categorization_prompt(items)
+    <<~PROMPT
+      Categorize the following grocery items into appropriate store aisles/sections.
+      Return the response as a JSON array with objects containing 'item' and 'aisle' fields.
+
+      Grocery items: #{items.join(', ')}
+
+      Common grocery store aisles include:
+      - Produce (fruits, vegetables)
+      - Dairy (milk, cheese, yogurt)
+      - Meat & Seafood
+      - Bakery (bread, pastries)
+      - Pantry (canned goods, pasta, rice)
+      - Frozen Foods
+      - Beverages
+      - Snacks
+      - Condiments & Sauces
+      - Household & Cleaning
+
+      Response format:
+      [
+        {"item": "Milk", "aisle": "Dairy"},
+        {"item": "Apples", "aisle": "Produce"}
+      ]
+    PROMPT
   end
 
-  def initialize_common_items_cache
-    # This logic remains the same
-    common_items = {
-      # Produce
-      "apple" => "Produce", "banana" => "Produce", "orange" => "Produce", "tomato" => "Produce",
-      "lettuce" => "Produce", "carrot" => "Produce", "onion" => "Produce", "potato" => "Produce",
-      "broccoli" => "Produce", "spinach" => "Produce", "cucumber" => "Produce", "bell pepper" => "Produce",
-      "avocado" => "Produce", "lemon" => "Produce", "lime" => "Produce", "garlic" => "Produce",
+  def generate_response(prompt)
+    uri = URI("#{@base_url}/generate")
 
-      # Dairy
-      "cheese" => "Dairy", "yogurt" => "Dairy", "butter" => "Dairy",
-      "cream" => "Dairy", "eggs" => "Dairy", "sour cream" => "Dairy", "cottage cheese" => "Dairy",
-      "half and half" => "Dairy", "heavy cream" => "Dairy",
+    request = Net::HTTP::Post.new(uri)
+    request.content_type = "application/json"
+    request.body = {
+      model: @model,
+      prompt: prompt,
+      stream: false
+    }.to_json
 
-      # Meat & Seafood
-      "chicken" => "Meat & Seafood", "beef" => "Meat & Seafood", "pork" => "Meat & Seafood",
-      "fish" => "Meat & Seafood", "salmon" => "Meat & Seafood", "tuna" => "Meat & Seafood",
-      "shrimp" => "Meat & Seafood", "bacon" => "Meat & Seafood", "ham" => "Meat & Seafood",
-      "turkey" => "Meat & Seafood", "sausage" => "Meat & Seafood",
+    response = Net::HTTP.start(uri.hostname, uri.port) do |http|
+      http.request(request)
+    end
 
-      # Bakery
-      "bread" => "Bakery", "bagel" => "Bakery", "muffin" => "Bakery", "cake" => "Bakery",
-      "croissant" => "Bakery", "donut" => "Bakery", "cookie" => "Bakery", "bun" => "Bakery",
-      "roll" => "Bakery", "pastry" => "Bakery",
+    if response.code == "200"
+      JSON.parse(response.body)["response"]
+    else
+      raise "HTTP #{response.code}: #{response.body}"
+    end
+  end
 
-      # Pantry
-      "pasta" => "Pantry", "rice" => "Pantry", "beans" => "Pantry", "canned" => "Pantry",
-      "soup" => "Pantry", "sauce" => "Pantry", "oil" => "Pantry", "flour" => "Pantry",
-      "sugar" => "Pantry", "salt" => "Pantry", "pepper" => "Pantry", "spice" => "Pantry",
+  def parse_categorization_response(response, original_items)
+    begin
+      # Try to extract JSON from the response
+      json_match = response.match(/\[.*\]/m)
+      if json_match
+        parsed = JSON.parse(json_match[0])
+        parsed.map { |item| { product: item["item"], aisle: item["aisle"] } }
+      else
+        # Fallback if JSON parsing fails
+        fallback_categorization(original_items)
+      end
+    rescue JSON::ParserError
+      fallback_categorization(original_items)
+    end
+  end
 
-      # Frozen Foods
-      "frozen" => "Frozen Foods", "ice cream" => "Frozen Foods", "frozen pizza" => "Frozen Foods",
-      "frozen vegetables" => "Frozen Foods", "frozen fruit" => "Frozen Foods",
-
-      # Beverages
-      "soda" => "Beverages", "juice" => "Beverages", "water" => "Beverages", "beer" => "Beverages",
-      "wine" => "Beverages", "coffee" => "Beverages", "tea" => "Beverages", "milk" => "Beverages",
-
-      # Snacks
-      "chips" => "Snacks", "crackers" => "Snacks", "cookies" => "Snacks", "candy" => "Snacks",
-      "popcorn" => "Snacks", "nuts" => "Snacks", "pretzels" => "Snacks",
-
-      # Condiments
-      "ketchup" => "Condiments", "mustard" => "Condiments", "mayonnaise" => "Condiments",
-      "hot sauce" => "Condiments", "soy sauce" => "Condiments", "vinegar" => "Condiments",
-      "salad dressing" => "Condiments", "bbq sauce" => "Condiments",
-
-      # Household
-      "paper towels" => "Household", "toilet paper" => "Household", "cleaning" => "Household",
-      "laundry" => "Household", "dish soap" => "Household", "trash bags" => "Household",
-      "batteries" => "Household", "light bulbs" => "Household"
-    }
-    @cache.merge!(common_items)
+  def fallback_categorization(items)
+    # Simple fallback categorization
+    items.map do |item|
+      aisle = case item.downcase
+      when /milk|cheese|yogurt|butter|cream/
+                "Dairy"
+      when /apple|banana|orange|tomato|lettuce|carrot/
+                "Produce"
+      when /bread|bagel|muffin|cake/
+                "Bakery"
+      when /chicken|beef|pork|fish|meat/
+                "Meat & Seafood"
+      when /pasta|rice|beans|canned/
+                "Pantry"
+      when /frozen|ice cream/
+                "Frozen Foods"
+      when /soda|juice|water|beer/
+                "Beverages"
+      when /chips|crackers|cookies|candy/
+                "Snacks"
+      else
+                "General"
+      end
+      { product: item, aisle: aisle }
+    end
   end
 end

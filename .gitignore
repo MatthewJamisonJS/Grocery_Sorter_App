@@ -93,8 +93,3 @@ Thumbs.db
 *.bak
 *.backup
 *.old
-
-# Ignore custom client secrets file
-/vendor/bundle/
-app/config/client_secrets.json
-app/config/client_secrets.json

@@ -2,104 +2,27 @@
 
 A cross-platform desktop application built with Glimmer DSL for LibUI that helps you organize grocery lists by automatically categorizing items into store aisles using AI.
 
-## 🚨 Current Iteration Status
-
-**This iteration focuses on core Ollama AI functionality without Google OAuth integration.**
-
-- ✅ **Core AI Categorization**: Fully functional with Ollama
-- ✅ **Clipboard Integration**: Paste grocery lists directly
-- ✅ **PDF Export**: Generate categorized reports
-- ✅ **Enhanced Fallback**: Works even when Ollama is unavailable
-- ⏸️ **Google Docs Integration**: Temporarily disabled (see TODO comments)
-
 ## Features
 
-- 🛒 **Grocery List Management**: Add items manually via clipboard paste
+- 🛒 **Grocery List Management**: Add items manually or import from Google Docs
 - 🤖 **AI-Powered Categorization**: Uses Ollama to intelligently sort items into store aisles
-- 📋 **Clipboard Integration**: Paste grocery lists directly from any source
-- 💾 **Export Functionality**: Save categorized lists as JSON files and PDF reports
+- 📄 **Google Docs Integration**: Import grocery lists directly from Google Docs
+- 💾 **Export Functionality**: Save categorized lists as JSON files
 - 🖥️ **Cross-Platform Desktop App**: Built with Glimmer DSL for LibUI (macOS & Linux)
 - 🚀 **One-Command Setup**: Automatic setup wizard for new users
 - 🔧 **Easy Installation**: Makefile and install scripts for both platforms
-- 🔒 **Enhanced Security**: Built-in protection against Ollama vulnerabilities
-- 🧠 **RAG-Powered Processing**: Uses embeddings for faster, more accurate categorization
-- 🛡️ **Robust Fallback**: Enhanced rule-based categorization when AI is unavailable
 
 ## Prerequisites
 
 - Ruby 3.0+
-- Ollama installed and running locally (optional - enhanced fallback available)
-
-## 🔒 Security Features
-
-This application includes comprehensive security measures to protect against known Ollama vulnerabilities:
-
-### Built-in Security
-- **Host Validation**: Only allows localhost connections to Ollama
-- **Rate Limiting**: Prevents API abuse with configurable limits
-- **Timeout Protection**: Prevents hanging connections
-- **Secure Headers**: Proper User-Agent and authentication headers
-- **RAG Processing**: Reduces API calls with embedding-based categorization
-
-### Security Setup
-
-**Quick Security Setup:**
-```bash
-# Run the security setup script
-ruby script/setup_secure_ollama.rb
-```
-
-**Manual Security Configuration:**
-1. **Run Ollama locally only:**
-   ```bash
-   ollama serve --host 127.0.0.1:11434
-   ```
-
-2. **Set up firewall rules:**
-   ```bash
-   # macOS
-   sudo pfctl -e
-   echo "block drop in proto tcp from any to any port 11434" | sudo pfctl -f -
-   
-   # Linux
-   sudo iptables -A INPUT -p tcp --dport 11434 -s 127.0.0.1 -j ACCEPT
-   sudo iptables -A INPUT -p tcp --dport 11434 -j DROP
-   ```
-
-3. **Configure API key:**
-   ```bash
-   export OLLAMA_API_KEY="your-secure-api-key-here"
-   ```
-
-**For detailed security documentation, see:**
-- [Security Configuration Guide](config/ollama_security.md)
-- [Ollama Security Best Practices](https://github.com/ollama/ollama/blob/main/docs/security.md)
+- Google Cloud Project with Google Docs API enabled (optional - demo mode available)
+- Ollama installed and running locally (optional - for AI categorization)
 
 ## 🚀 Quick Start (Recommended)
 
-### Step 1: Get the App
+### macOS & Linux - One Command Setup
 
-**Option A: Download from GitHub (Easiest)**
-1. Go to the [GitHub repository](https://github.com/MatthewJamisonJS/Grocery_Sorter_App)
-2. Click the green "Code" button
-3. Click "Download ZIP"
-4. Extract the ZIP file to a folder on your computer
-5. Open Terminal/Command Prompt and navigate to the extracted folder
-
-**Option B: Clone with Git (For developers)**
-```bash
-# Clone the repository
-git clone https://github.com/MatthewJamisonJS/Grocery_Sorter_App.git
-
-# Navigate into the project folder
-cd Grocery_Sorter_App
-```
-
-### Step 2: Run the App
-
-**macOS & Linux - One Command Setup**
-
-Once you're in the project folder, just run:
+**Just run one command and follow the setup wizard:**
 
 ```bash
 ./grocery_sorter
@@ -108,15 +31,8 @@ Once you're in the project folder, just run:
 The app will automatically:
 - ✅ Check if setup is needed
 - 🔧 Run the setup wizard if it's your first time
-- 🔒 Configure security settings for Ollama
 - 🚀 Launch the application
-- 📋 Ready for clipboard paste functionality
-
-**If you get a permission error, make the script executable:**
-```bash
-chmod +x grocery_sorter
-./grocery_sorter
-```
+- 📋 Guide you through Google API setup (if needed)
 
 ### Linux - Alternative Installation Methods
 
@@ -199,6 +115,30 @@ The setup wizard offers three options:
 - Limited functionality for testing
 - Perfect for trying out the app
 
+## Google API Setup (Optional)
+
+If you want full Google Docs integration:
+
+1. **Create a Google Cloud Project**:
+   - Go to [Google Cloud Console](https://console.cloud.google.com)
+   - Create a new project or select an existing one
+
+2. **Enable Google Docs API**:
+   - Navigate to "APIs & Services" > "Library"
+   - Search for "Google Docs API"
+   - Click "Enable"
+
+3. **Create OAuth 2.0 Credentials**:
+   - Go to "APIs & Services" > "Credentials"
+   - Click "Create Credentials" > "OAuth 2.0 Client IDs"
+   - Choose "Desktop application"
+   - Download the JSON file
+
+4. **Use the setup wizard**:
+   - Run `./grocery_sorter`
+   - Choose option 1 or 2
+   - Paste your credentials when prompted
+
 ## Ollama Setup (Optional)
 
 For AI categorization features:
@@ -207,21 +147,14 @@ For AI categorization features:
    - Download from [ollama.ai](https://ollama.ai/download)
    - Follow installation instructions for your platform
 
-2. **Start Ollama Securely**:
+2. **Start Ollama**:
    ```bash
-   # Secure localhost-only binding
-   ollama serve --host 127.0.0.1:11434
+   ollama serve
    ```
 
 3. **Pull a Model**:
    ```bash
    ollama pull llama2
-   ```
-
-4. **Configure Security** (Recommended):
-   ```bash
-   # Run the security setup script
-   ruby script/setup_secure_ollama.rb
    ```
 
 ## Usage
@@ -250,24 +183,26 @@ make run
 
 ### Features
 
-- **Clipboard Integration**: Paste grocery lists directly from any source
+- **Test Connections**: Verify Google API and Ollama are working
+- **Load from Google Docs**: Import grocery lists using a document URL or ID
+- **Manual Entry**: Add items one by one
 - **AI Categorization**: Automatically sort items into store aisles
-- **Enhanced Fallback**: Rule-based categorization when AI is unavailable
-- **Export**: Save categorized lists as JSON files and PDF reports
+- **Export**: Save categorized lists as JSON files
 
-### Clipboard Integration
+### Google Docs Integration
 
-1. Copy your grocery list from any source (text, notes, etc.)
-2. Click "Load from Clipboard" in the app
-3. The app will automatically categorize all items
-4. View results in the table and download PDF reports
+1. Create a Google Doc with your grocery list (one item per line)
+2. Copy the document URL or ID
+3. Paste it into the "Document URL or ID" field
+4. Enter your Google email
+5. Click "Load from Google Docs"
 
 ### AI Categorization
 
 The app uses Ollama to intelligently categorize grocery items into common store aisles:
 
 - Produce (fruits, vegetables)
-- Dairy & Eggs (milk, cheese, yogurt)
+- Dairy (milk, cheese, yogurt)
 - Meat & Seafood
 - Bakery (bread, pastries)
 - Pantry (canned goods, pasta, rice)
@@ -276,91 +211,39 @@ The app uses Ollama to intelligently categorize grocery items into common store 
 - Snacks
 - Condiments & Sauces
 - Household & Cleaning
-- Health & Beauty
-- Electronics
-- General Merchandise
 
 ## Troubleshooting
 
-### Ollama Connection Issues
+### Google API Issues
 
-**"Wrong Status Line" or Streaming Errors:**
-- The app now uses non-streaming requests by default for better reliability
-- If you see streaming errors, they're automatically handled with fallback categorization
+- **Authentication Error**: Run the app and follow the authentication flow
+- **Permission Denied**: Ensure Google Docs API is enabled in your project
+- **Invalid Credentials**: Use the setup wizard to re-enter credentials
 
-**"Connection Failed" or Timeout Errors:**
-```bash
-# Check if Ollama is running
-curl http://localhost:11434/api/tags
+### Ollama Issues
 
-# Start Ollama if not running
-ollama serve
+- **Connection Failed**: Make sure Ollama is running (`ollama serve`)
+- **Model Not Found**: Pull the required model (`ollama pull llama2`)
+- **Slow Responses**: Consider using a smaller model or upgrading hardware
 
-# Test with a simple model
-ollama pull llama2:7b
-```
+### Linux-Specific Issues
 
-**Server Restart Detection:**
-- The app automatically detects when Ollama server restarts
-- Wait 10-15 seconds for the server to stabilize after restart
-- The app will retry automatically
+- **Ruby Not Found**: Install Ruby via your package manager (see installation options above)
+- **Permission Denied**: Ensure you have sudo access for installation
+- **Missing Dependencies**: Run `make deps` or `./install.sh` to install system dependencies
+- **Package Manager Not Supported**: Install Ruby manually from [ruby-lang.org](https://www.ruby-lang.org/en/documentation/installation/)
 
-### Enhanced Fallback System
+### macOS-Specific Issues
 
-**When Ollama is unavailable:**
-- The app automatically switches to enhanced rule-based categorization
-- No internet connection required
-- Works with common grocery items
-- Results are still accurate for most items
-
-### PDF Generation Issues
-
-**"Font Not Found" Errors:**
-- Font files are included in `vendor/assets/fonts/`
-- If you get font errors, ensure the font files exist:
-```bash
-ls -la vendor/assets/fonts/
-# Should show: DejaVuSans.ttf and DejaVuSans-Bold.ttf
-```
+- **Ruby Version Conflicts**: Use Homebrew Ruby instead of system Ruby
+- **Permission Issues**: Ensure Homebrew is properly installed and configured
+- **Missing Dependencies**: Run `make deps` to install via Homebrew
 
 ### General Issues
 
-**"Ruby Not Found" or Version Issues:**
-```bash
-# Check Ruby version
-ruby --version
-
-# Install via Homebrew (macOS)
-brew install ruby
-
-# Install via package manager (Linux)
-sudo apt-get install ruby ruby-dev  # Ubuntu/Debian
-sudo dnf install ruby ruby-devel    # Fedora/RHEL
-```
-
-**"Bundle Install" Errors:**
-```bash
-# Install bundler first
-gem install bundler
-
-# Then install dependencies
-bundle install
-```
-
-**Permission Issues:**
-```bash
-# Make scripts executable
-chmod +x grocery_sorter
-chmod +x install.sh
-
-# Fix directory permissions
-chmod 755 app/config/
-```
-
-**Performance Issues:**
-- The app uses enhanced fallback categorization when Ollama is unavailable
-- Consider using a smaller model: `ollama pull llama2:7b`
-- Reduce batch size in the OllamaService configuration
+- **Missing Dependencies**: Run `bundle install`
+- **Permission Errors**: Ensure you have write access to the config directory
+- **Network Issues**: Check your internet connection for Google API calls
 
 ## Development
 
@@ -385,9 +268,9 @@ make quickstart # Complete setup and installation
 ```
 grocery_sorter_app/
 ├── app/services/
-│   ├── ollama_service.rb           # Ollama AI integration (ACTIVE)
-│   ├── google_auth_service.rb      # Google API authentication (DISABLED)
-│   └── google_docs_service.rb      # Google Docs integration (DISABLED)
+│   ├── google_auth_service.rb      # Google API authentication
+│   ├── google_docs_service.rb      # Google Docs integration
+│   └── ollama_service.rb           # Ollama AI integration
 ├── script/
 │   ├── grocery_sorter.rb           # Main Glimmer application
 │   └── setup.rb                    # Automated setup wizard
@@ -396,8 +279,8 @@ grocery_sorter_app/
 ├── Makefile                        # Cross-platform build system
 └── config/
     ├── client_secrets.example.json # Example credentials file
-    ├── client_secrets.json         # Google API credentials (DISABLED)
-    └── tokens.yaml                 # Google API tokens (DISABLED)
+    ├── client_secrets.json         # Google API credentials (user-provided)
+    └── tokens.yaml                 # Google API tokens (auto-generated)
 ```
 
 ### Adding New Features
@@ -405,21 +288,6 @@ grocery_sorter_app/
 1. **New AI Models**: Modify `OllamaService` to support different models
 2. **Additional APIs**: Create new service classes following the existing pattern
 3. **UI Enhancements**: Extend the Glimmer DSL interface in `grocery_sorter.rb`
-
-## TODO: Google Docs Integration
-
-**Status**: Temporarily disabled for this iteration
-
-**To restore Google Docs functionality:**
-1. Uncomment Google-related requires in `script/grocery_sorter.rb`
-2. Uncomment Google Docs UI elements
-3. Fix OAuth authentication issues
-4. Test with valid Google API credentials
-
-**Files to modify:**
-- `script/grocery_sorter.rb` (uncomment Google imports and UI)
-- `app/services/google_auth_service.rb` (fix OAuth flow)
-- `app/services/google_docs_service.rb` (verify API integration)
 
 ## Security
 
@@ -446,4 +314,5 @@ MIT License - see LICENSE file for details
 ## Acknowledgments
 
 - [Glimmer DSL for LibUI](https://github.com/AndyObtiva/glimmer-dsl-libui) - Desktop GUI framework
+- [Google Docs API](https://developers.google.com/workspace/docs/api) - Document integration
 - [Ollama](https://ollama.ai) - Local AI inference
