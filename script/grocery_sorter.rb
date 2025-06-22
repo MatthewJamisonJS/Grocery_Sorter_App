@@ -75,6 +75,7 @@ class GrocerySorterGUI
   def create_google_docs_section
     group('Google Docs Integration') {
       vertical_box {
+        # NOTE: Google Docs integration is currently DISABLED. The app does NOT connect to Google API. All Google Docs features are non-functional until further notice.
         # Email input field
         horizontal_box {
           label('Your Google Email:') {

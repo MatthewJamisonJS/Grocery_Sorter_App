@@ -1,5 +1,7 @@
 # Grocery Sorter App
 
+> **NOTE:** Google Docs integration is currently **DISABLED**. The app does NOT connect to Google API. All Google Docs/OAuth features are non-functional until further notice. Core functionality (batch sorting, PDF, clipboard) works without Google API.
+
 A cross-platform desktop application built with Glimmer DSL for LibUI that helps you organize grocery lists by automatically categorizing items into store aisles using AI.
 
 ## Features

@@ -1,5 +1,7 @@
 #!/usr/bin/env ruby
 
+# WARNING: Google OAuth is currently DISABLED. Not required for core functionality. Google Docs features are non-functional until further notice.
+
 require "fileutils"
 require "json"
 

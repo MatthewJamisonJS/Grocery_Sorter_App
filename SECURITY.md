@@ -1,5 +1,7 @@
 # Security Guide
 
+> **WARNING:** Google API integration is currently **DISABLED**. Credentials are NOT required for core app functionality. Google Docs features are non-functional until further notice.
+
 ## 🔐 Credential Management
 
 This application requires Google API credentials to function. **Never commit your actual credentials to version control.**

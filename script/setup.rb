@@ -1,5 +1,7 @@
 #!/usr/bin/env ruby
 
+# NOTE: Google API integration is currently DISABLED. Credentials are NOT required for core functionality. You can skip Google setup unless you want to test Google Docs features (currently non-functional).
+
 require 'fileutils'
 require 'json'
 require 'open-uri'
