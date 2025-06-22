@@ -1,273 +1,168 @@
 require "net/http"
 require "json"
 require "uri"
-require "concurrent"
+
+# Load the refactored components
+require_relative "ollama/client"
+require_relative "ollama/health_checker"
+require_relative "ollama/categorizer"
 
 class OllamaService
-  def initialize(host: "http://localhost:11434", model: "llama3.3:latest")
+  # This remains here as it's a core part of the prompt contract.
+  AISLES = [
+    "Produce", "Dairy & Eggs", "Meat & Seafood", "Bakery", "Pantry",
+    "Frozen Foods", "Beverages", "Snacks", "Condiments & Sauces", "Household & Cleaning",
+    "Health & Beauty", "Pet Supplies", "Baby Care", "Electronics", "Toys & Games",
+    "Clothing & Apparel", "General Merchandise"
+  ].freeze
+
+  SECURITY_CONFIG = {
+    timeout_settings: {
+      open_timeout: 15,
+      read_timeout: 90,
+      keep_alive_timeout: 30
+    },
+    server_health: {
+      max_consecutive_failures: 3,
+      health_check_interval: 5
+    },
+    model_pull: {
+      pull_in_progress_timeout: 300
+    }
+  }
+
+  def initialize(host: "http://localhost:11434", model: "incept5/llama3.1-claude:latest", api_key: nil)
     @host = host
     @model = model
-    @base_url = "#{host}/api"
-    @cache = Concurrent::Map.new
-    @batch_size = 10  # Process items in batches for optimal performance
+    @cache = {}
+    @batch_size = 3
+
+    # Initialize the new components
+    @client = Ollama::Client.new(host: host, model: model, api_key: api_key, security_config: SECURITY_CONFIG)
+    @health_checker = Ollama::HealthChecker.new(@client, SECURITY_CONFIG)
+    @categorizer = Ollama::Categorizer.new(@client, model: model, health_checker: @health_checker)
+
+    initialize_common_items_cache
+    puts "✅ OllamaService initialized with new architecture."
   end
 
-  # Lightning-fast batch categorization for large lists
+  # The main entry point for batch categorization.
   def categorize_grocery_items_batch(items, progress_callback = nil)
     return [] if items.empty?
 
-    # Split items into optimal batches
-    batches = items.each_slice(@batch_size).to_a
-    total_batches = batches.length
+    # Step 1: Check cache for instant results
+    cache_hits, uncached_items = check_cache(items)
+    processed_items = cache_hits
+    progress_callback&.call("📋 Found #{cache_hits.length} items in cache, processing #{uncached_items.length} new items...")
 
-    puts "🚀 Processing #{items.length} items in #{total_batches} batches..."
+    # Step 2: Process uncached items in batches
+    if uncached_items.any?
+      batches = uncached_items.each_slice(@batch_size).to_a
+      total_batches = batches.length
 
-    # Process batches concurrently for maximum speed
-    results = Concurrent::Array.new
+      batches.each_with_index do |batch, index|
+        progress_callback&.call("🔄 Processing batch #{index + 1}/#{total_batches}...")
 
-    batches.each_with_index do |batch, batch_index|
-      progress_callback&.call("Processing batch #{batch_index + 1}/#{total_batches}") if progress_callback
+        # Delegate categorization to the new Categorizer class
+        result = @categorizer.categorize(batch)
+        processed_items.concat(result)
 
-      # Use cached results when possible
-      cached_results = batch.map { |item| @cache[item.downcase] }.compact
-      uncached_items = batch.reject { |item| @cache[item.downcase] }
-
-      if uncached_items.any?
-        # Process uncached items in this batch
-        batch_results = process_batch_optimized(uncached_items)
-
-        # Cache the results
-        batch_results.each do |result|
-          @cache[result[:product].downcase] = result[:aisle]
+        # Update cache with new results
+        result.each do |item|
+          @cache[item[:product].downcase.strip] = item[:aisle] if item && item[:product] && item[:aisle]
         end
-
-        results.concat(batch_results)
       end
-
-      results.concat(cached_results.map { |aisle| { product: batch[batch_index], aisle: aisle } })
     end
 
-    puts "✅ Batch processing complete! Processed #{items.length} items"
-    results
+    progress_callback&.call("✅ Batch processing complete!")
+    processed_items
   end
 
-  # Original method for backward compatibility
-  def categorize_grocery_items(items)
-    if items.length > 5
-      # Use batch processing for larger lists
-      categorize_grocery_items_batch(items)
-    else
-      # Use single request for small lists
-      prompt = build_categorization_prompt(items)
-      begin
-        response = generate_response_optimized(prompt)
-        parse_categorization_response(response, items)
-      rescue StandardError => e
-        puts "❌ Ollama API Error: #{e.message}"
-        fallback_categorization(items)
-      end
-    end
+  # Cleanup connections by delegating to the client
+  def cleanup_connections
+    @client.cleanup_connections
   end
 
-  def test_connection
-    begin
-      uri = URI("#{@base_url}/tags")
-      response = Net::HTTP.get_response(uri)
-
-      if response.code == "200"
-        models = JSON.parse(response.body)["models"]&.map { |m| m["name"] }
-        puts "✅ Ollama connection successful!"
-        puts "📋 Available models: #{models&.join(', ')}"
-
-        # Check for optimized models
-        optimized_models = models&.select { |m| m.include?("q4") || m.include?("q5") }
-        if optimized_models.any?
-          puts "⚡ Optimized models available: #{optimized_models.join(', ')}"
-          puts "💡 Consider using quantized models for faster processing!"
-        end
-
-        true
-      else
-        puts "❌ Ollama connection failed! Status: #{response.code}"
-        false
-      end
-    rescue StandardError => e
-      puts "❌ Ollama connection failed: #{e.message}"
-      puts "🔧 Make sure Ollama is running: ollama serve"
-      false
-    end
-  end
-
-  # Get optimal model for speed
-  def get_optimal_model
-    begin
-      uri = URI("#{@base_url}/tags")
-      response = Net::HTTP.get_response(uri)
-
-      if response.code == "200"
-        models = JSON.parse(response.body)["models"]&.map { |m| m["name"] }
-
-        # Prefer quantized models for speed
-        q4_models = models&.select { |m| m.include?("q4") }
-        q5_models = models&.select { |m| m.include?("q5") }
-
-        if q4_models.any?
-          q4_models.first
-        elsif q5_models.any?
-          q5_models.first
-        else
-          @model
-        end
-      else
-        @model
-      end
-    rescue
-      @model
-    end
+  def get_service_status
+    {
+      host: @host,
+      model: @model,
+      batch_size: @batch_size,
+      cache_size: @cache.size,
+      consecutive_failures: @health_checker.consecutive_failures,
+      model_pull_detected: @health_checker.model_pull_detected,
+      server_healthy: @health_checker.server_healthy?
+    }
   end
 
   private
 
-  # Optimized batch processing with concurrent requests
-  def process_batch_optimized(items)
-    return [] if items.empty?
-
-    # Use optimized model
-    optimal_model = get_optimal_model
-
-    # Create optimized prompt for batch processing
-    prompt = build_batch_categorization_prompt(items)
-
-    begin
-      response = generate_response_optimized(prompt, optimal_model)
-      parse_categorization_response(response, items)
-    rescue StandardError => e
-      puts "❌ Batch processing error: #{e.message}"
-      fallback_categorization(items)
-    end
-  end
-
-  # Optimized prompt for batch processing
-  def build_batch_categorization_prompt(items)
-    <<~PROMPT
-      Categorize these grocery items into store aisles. Return JSON array only.
-
-      Items: #{items.join(', ')}
-
-      Aisles: Produce, Dairy, Meat & Seafood, Bakery, Pantry, Frozen Foods, Beverages, Snacks, Condiments, Household
-
-      Format: [{"item": "name", "aisle": "aisle"}]
-    PROMPT
-  end
-
-  # Original prompt for backward compatibility
-  def build_categorization_prompt(items)
-    <<~PROMPT
-      Categorize the following grocery items into appropriate store aisles/sections.
-      Return the response as a JSON array with objects containing 'item' and 'aisle' fields.
-
-      Grocery items: #{items.join(', ')}
-
-      Common grocery store aisles include:
-      - Produce (fruits, vegetables)
-      - Dairy (milk, cheese, yogurt)
-      - Meat & Seafood
-      - Bakery (bread, pastries)
-      - Pantry (canned goods, pasta, rice)
-      - Frozen Foods
-      - Beverages
-      - Snacks
-      - Condiments & Sauces
-      - Household & Cleaning
-
-      Response format:
-      [
-        {"item": "Milk", "aisle": "Dairy"},
-        {"item": "Apples", "aisle": "Produce"}
-      ]
-    PROMPT
-  end
-
-  # Optimized response generation with performance settings
-  def generate_response_optimized(prompt, model = nil)
-    model ||= @model
-    uri = URI("#{@base_url}/generate")
-
-    request = Net::HTTP::Post.new(uri)
-    request.content_type = "application/json"
-
-    # Optimized request body with performance settings
-    request.body = {
-      model: model,
-      prompt: prompt,
-      stream: false,
-      options: {
-        num_ctx: 2048,        # Smaller context for speed
-        num_thread: 8,        # Use multiple threads
-        temperature: 0.1,     # Lower temperature for consistent results
-        top_p: 0.9,           # Optimize for speed
-        top_k: 40             # Limit choices for faster processing
-      }
-    }.to_json
-
-    response = Net::HTTP.start(uri.hostname, uri.port,
-                              open_timeout: 30,
-                              read_timeout: 60) do |http|
-      http.request(request)
-    end
-
-    if response.code == "200"
-      JSON.parse(response.body)["response"]
-    else
-      raise "HTTP #{response.code}: #{response.body}"
-    end
-  end
-
-  # Original method for backward compatibility
-  def generate_response(prompt)
-    generate_response_optimized(prompt)
-  end
-
-  def parse_categorization_response(response, original_items)
-    begin
-      # Try to extract JSON from the response
-      json_match = response.match(/\[.*\]/m)
-      if json_match
-        parsed = JSON.parse(json_match[0])
-        parsed.map { |item| { product: item["item"], aisle: item["aisle"] } }
+  def check_cache(items)
+    cache_hits = []
+    uncached_items = []
+    items.each do |item|
+      item_lower = item.downcase.strip
+      if @cache[item_lower]
+        cache_hits << { product: item, aisle: @cache[item_lower], notes: "From cache" }
       else
-        # Fallback if JSON parsing fails
-        fallback_categorization(original_items)
+        uncached_items << item
       end
-    rescue JSON::ParserError
-      fallback_categorization(original_items)
     end
+    [ cache_hits, uncached_items ]
   end
 
-  def fallback_categorization(items)
-    # Simple fallback categorization
-    items.map do |item|
-      aisle = case item.downcase
-      when /milk|cheese|yogurt|butter|cream/
-                "Dairy"
-      when /apple|banana|orange|tomato|lettuce|carrot/
-                "Produce"
-      when /bread|bagel|muffin|cake/
-                "Bakery"
-      when /chicken|beef|pork|fish|meat/
-                "Meat & Seafood"
-      when /pasta|rice|beans|canned/
-                "Pantry"
-      when /frozen|ice cream/
-                "Frozen Foods"
-      when /soda|juice|water|beer/
-                "Beverages"
-      when /chips|crackers|cookies|candy/
-                "Snacks"
-      else
-                "General"
-      end
-      { product: item, aisle: aisle }
-    end
+  def initialize_common_items_cache
+    # This logic remains the same
+    common_items = {
+      # Produce
+      "apple" => "Produce", "banana" => "Produce", "orange" => "Produce", "tomato" => "Produce",
+      "lettuce" => "Produce", "carrot" => "Produce", "onion" => "Produce", "potato" => "Produce",
+      "broccoli" => "Produce", "spinach" => "Produce", "cucumber" => "Produce", "bell pepper" => "Produce",
+      "avocado" => "Produce", "lemon" => "Produce", "lime" => "Produce", "garlic" => "Produce",
+
+      # Dairy
+      "cheese" => "Dairy", "yogurt" => "Dairy", "butter" => "Dairy",
+      "cream" => "Dairy", "eggs" => "Dairy", "sour cream" => "Dairy", "cottage cheese" => "Dairy",
+      "half and half" => "Dairy", "heavy cream" => "Dairy",
+
+      # Meat & Seafood
+      "chicken" => "Meat & Seafood", "beef" => "Meat & Seafood", "pork" => "Meat & Seafood",
+      "fish" => "Meat & Seafood", "salmon" => "Meat & Seafood", "tuna" => "Meat & Seafood",
+      "shrimp" => "Meat & Seafood", "bacon" => "Meat & Seafood", "ham" => "Meat & Seafood",
+      "turkey" => "Meat & Seafood", "sausage" => "Meat & Seafood",
+
+      # Bakery
+      "bread" => "Bakery", "bagel" => "Bakery", "muffin" => "Bakery", "cake" => "Bakery",
+      "croissant" => "Bakery", "donut" => "Bakery", "cookie" => "Bakery", "bun" => "Bakery",
+      "roll" => "Bakery", "pastry" => "Bakery",
+
+      # Pantry
+      "pasta" => "Pantry", "rice" => "Pantry", "beans" => "Pantry", "canned" => "Pantry",
+      "soup" => "Pantry", "sauce" => "Pantry", "oil" => "Pantry", "flour" => "Pantry",
+      "sugar" => "Pantry", "salt" => "Pantry", "pepper" => "Pantry", "spice" => "Pantry",
+
+      # Frozen Foods
+      "frozen" => "Frozen Foods", "ice cream" => "Frozen Foods", "frozen pizza" => "Frozen Foods",
+      "frozen vegetables" => "Frozen Foods", "frozen fruit" => "Frozen Foods",
+
+      # Beverages
+      "soda" => "Beverages", "juice" => "Beverages", "water" => "Beverages", "beer" => "Beverages",
+      "wine" => "Beverages", "coffee" => "Beverages", "tea" => "Beverages", "milk" => "Beverages",
+
+      # Snacks
+      "chips" => "Snacks", "crackers" => "Snacks", "cookies" => "Snacks", "candy" => "Snacks",
+      "popcorn" => "Snacks", "nuts" => "Snacks", "pretzels" => "Snacks",
+
+      # Condiments
+      "ketchup" => "Condiments", "mustard" => "Condiments", "mayonnaise" => "Condiments",
+      "hot sauce" => "Condiments", "soy sauce" => "Condiments", "vinegar" => "Condiments",
+      "salad dressing" => "Condiments", "bbq sauce" => "Condiments",
+
+      # Household
+      "paper towels" => "Household", "toilet paper" => "Household", "cleaning" => "Household",
+      "laundry" => "Household", "dish soap" => "Household", "trash bags" => "Household",
+      "batteries" => "Household", "light bulbs" => "Household"
+    }
+    @cache.merge!(common_items)
   end
 end
