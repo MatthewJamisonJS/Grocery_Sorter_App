@@ -3,14 +3,21 @@ require "googleauth/stores/file_token_store"
 require "google/apis/docs_v1"
 require "fileutils"
 require "webrick"
+require "pathname"
 
 # GoogleAuthService handles OAuth 2.0 authentication with Google APIs
 # This service manages the complete OAuth flow including token storage and refresh
 class GoogleAuthService
   # Application configuration constants
   APPLICATION_NAME = "Grocery Sorter App".freeze
-  CREDENTIALS_PATH = Rails.root.join("config", "client_secrets.json")
-  TOKEN_PATH = Rails.root.join("config", "tokens.yaml")
+
+  # Flexible path resolution that works both in Rails and standalone
+  def self.root_path
+    defined?(Rails) ? Rails.root : Pathname.new(File.expand_path("../..", __FILE__))
+  end
+
+  CREDENTIALS_PATH = root_path.join("config", "client_secrets.json")
+  TOKEN_PATH = root_path.join("config", "tokens.yaml")
   REDIRECT_URI = "http://localhost:8080"
 
   # OAuth scopes define what permissions our app needs
@@ -23,15 +30,71 @@ class GoogleAuthService
   # Main entry point for OAuth authentication
   # Returns Google::Auth::UserRefreshCredentials object if successful
   def self.authorize
-    # Step 1: Set up the OAuth client and token storage
+    status, msg = validate_credentials!
+    puts msg
+    case status
+    when :created
+      raise "Credentials file created. Please fill it in and restart."
+    when :invalid
+      raise "Credentials file invalid. Please fix it and restart."
+    end
     setup_oauth_client
-
-    # Step 2: Try to get existing credentials from storage
     credentials = get_existing_credentials
     return credentials if credentials
-
-    # Step 3: If no existing credentials, start the OAuth flow
     perform_oauth_flow
+  end
+
+  # --- Credential File Management ---
+
+  # Ensures the credentials file exists. Returns :created or :exists.
+  def self.ensure_credentials_file_exists!
+    if File.exist?(CREDENTIALS_PATH)
+      :exists
+    else
+      write_example_credentials_file!
+      :created
+    end
+  end
+
+  # Writes an example credentials file for the user to fill in
+  def self.write_example_credentials_file!
+    FileUtils.mkdir_p(CREDENTIALS_PATH.dirname)
+    example_content = {
+      "installed" => {
+        "client_id" => "YOUR_CLIENT_ID_HERE",
+        "project_id" => "your-project-id",
+        "auth_uri" => "https://accounts.google.com/o/oauth2/auth",
+        "token_uri" => "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url" => "https://www.googleapis.com/oauth2/v1/certs",
+        "client_secret" => "YOUR_CLIENT_SECRET_HERE",
+        "redirect_uris" => [ "http://localhost:8080" ]
+      }
+    }
+    File.write(CREDENTIALS_PATH, JSON.pretty_generate(example_content))
+  end
+
+  # Checks if the credentials file is valid JSON and has required keys
+  def self.valid_credentials_file?
+    return false unless File.exist?(CREDENTIALS_PATH)
+    content = File.read(CREDENTIALS_PATH)
+    json = JSON.parse(content) rescue nil
+    return false unless json && json["installed"]
+    keys = %w[client_id client_secret auth_uri token_uri redirect_uris]
+    keys.all? { |k| json["installed"].key?(k) && !json["installed"][k].to_s.strip.empty? }
+  rescue
+    false
+  end
+
+  # Validates credentials file, returns [:created|:invalid|:valid, message]
+  def self.validate_credentials!
+    status = ensure_credentials_file_exists!
+    if status == :created
+      [ :created, "📝 Created example credentials file at #{CREDENTIALS_PATH}. Please fill it in with your Google API credentials." ]
+    elsif !valid_credentials_file?
+      [ :invalid, "❌ Credentials file at #{CREDENTIALS_PATH} is invalid or incomplete. Please check and update it." ]
+    else
+      [ :valid, "✅ Credentials file is present and valid." ]
+    end
   end
 
   # Test if we can successfully connect to Google APIs
@@ -61,8 +124,15 @@ class GoogleAuthService
 
   private
 
-  # Step 1: Initialize OAuth client components
+  # Step 2: Initialize OAuth client components
   def self.setup_oauth_client
+    # Check if credentials file exists and has valid content
+    unless File.exist?(CREDENTIALS_PATH) && File.size(CREDENTIALS_PATH) > 100
+      puts "⚠️ Credentials file not found or invalid. Please set up your Google API credentials."
+      puts "   File: #{CREDENTIALS_PATH}"
+      return nil
+    end
+
     # Load client credentials from Google Cloud Console JSON file
     @client_id = Google::Auth::ClientId.from_file(CREDENTIALS_PATH)
 
@@ -71,34 +141,38 @@ class GoogleAuthService
 
     # Create the authorizer that manages the OAuth flow
     @authorizer = Google::Auth::UserAuthorizer.new(@client_id, SCOPE, @token_store)
+  rescue => e
+    puts "❌ Error setting up OAuth client: #{e.message}"
+    puts "   Please check your credentials file: #{CREDENTIALS_PATH}"
+    nil
   end
 
-  # Step 2: Check if we already have valid credentials stored
+  # Step 3: Check if we already have valid credentials stored
   def self.get_existing_credentials
     user_id = "default"  # We use a single user for this desktop app
     @authorizer.get_credentials(user_id)
   end
 
-  # Step 3: Perform the complete OAuth flow
+  # Step 4: Perform the complete OAuth flow
   def self.perform_oauth_flow
     puts "🌐 Starting OAuth flow..."
     puts "This will open your browser for authorization."
 
-    # Step 3a: Start local server to receive the authorization code
+    # Step 4a: Start local server to receive the authorization code
     server = start_oauth_server
 
-    # Step 3b: Generate the authorization URL and open browser
+    # Step 4b: Generate the authorization URL and open browser
     auth_url = generate_authorization_url
     open_browser_for_authorization(auth_url)
 
-    # Step 3c: Wait for user to complete authorization in browser
+    # Step 4c: Wait for user to complete authorization in browser
     auth_code = wait_for_authorization_code(server)
 
-    # Step 3d: Exchange authorization code for access tokens
+    # Step 4d: Exchange authorization code for access tokens
     exchange_code_for_tokens(auth_code)
   end
 
-  # Step 3a: Start a local web server to receive the OAuth callback
+  # Step 4a: Start a local web server to receive the OAuth callback
   def self.start_oauth_server
     server = WEBrick::HTTPServer.new(Port: 8080)
 
@@ -166,7 +240,7 @@ class GoogleAuthService
     HTML
   end
 
-  # Step 3b: Generate the authorization URL with proper parameters
+  # Step 4b: Generate the authorization URL with proper parameters
   def self.generate_authorization_url
     @authorizer.get_authorization_url(
       base_url: REDIRECT_URI,
@@ -175,7 +249,7 @@ class GoogleAuthService
     )
   end
 
-  # Step 3b: Open the user's browser to the authorization URL
+  # Step 4b: Open the user's browser to the authorization URL
   def self.open_browser_for_authorization(url)
     # Try different commands to open browser based on OS
     opened = system("open", url) ||      # macOS
@@ -188,7 +262,7 @@ class GoogleAuthService
     end
   end
 
-  # Step 3c: Wait for the authorization code from the browser
+  # Step 4c: Wait for the authorization code from the browser
   def self.wait_for_authorization_code(server)
     timeout = 300  # 5 minutes
     start_time = Time.now
@@ -203,7 +277,7 @@ class GoogleAuthService
     nil
   end
 
-  # Step 3d: Exchange the authorization code for access and refresh tokens
+  # Step 4d: Exchange the authorization code for access and refresh tokens
   def self.exchange_code_for_tokens(auth_code)
     return nil unless auth_code
 

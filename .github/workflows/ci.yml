@@ -98,11 +98,21 @@ jobs:
 
       - name: Run basic functionality test
         run: |
-          # Test that the app services can be loaded without errors
           ruby -e "
             require 'bundler/setup'
+            require 'json'
+            require 'fileutils'
             require_relative 'app/services/google_auth_service'
+            puts 'Testing GoogleAuthService...'
+            status, msg = GoogleAuthService.validate_credentials!
+            puts msg
+            unless [:valid, :created].include?(status)
+              puts '❌ Credentials file is not valid or could not be created.'
+              exit 1
+            end
+            puts 'Testing GoogleDocsService...'
             require_relative 'app/services/google_docs_service'
+            puts 'Testing OllamaService...'
             require_relative 'app/services/ollama_service'
             puts '✅ All services load successfully'
           "

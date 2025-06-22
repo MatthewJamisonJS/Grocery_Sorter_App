@@ -187,8 +187,28 @@ class GrocerySorterGUI
   # Step 3: Set up service connections
   def setup_services
     begin
-      # Initialize Google Docs service (this will trigger OAuth if needed)
-      @google_docs_service = GoogleDocsService.new
+      # Check credentials first
+      status, msg = GoogleAuthService.validate_credentials!
+      puts msg
+
+      case status
+      when :created
+        puts "\n🔧 First-time setup required!"
+        puts "1. Get Google API credentials from: https://console.cloud.google.com/"
+        puts "2. Download the OAuth 2.0 client credentials JSON file"
+        puts "3. Save it as: #{GoogleAuthService::CREDENTIALS_PATH}"
+        puts "4. Restart the app"
+        puts "\n💡 Or run: ruby script/setup.rb for guided setup"
+        nil
+      when :invalid
+        puts "\n🔧 Credentials setup required!"
+        puts "Please fix the credentials file at: #{GoogleAuthService::CREDENTIALS_PATH}"
+        puts "\n💡 Or run: ruby script/setup.rb for guided setup"
+        nil
+      when :valid
+        # Initialize Google Docs service (this will trigger OAuth if needed)
+        @google_docs_service = GoogleDocsService.new
+      end
     rescue StandardError => e
       puts "⚠️ Google Docs service not available: #{e.message}"
     end
@@ -198,15 +218,42 @@ class GrocerySorterGUI
   def test_all_connections
     @status_label.text = "Testing connections..."
 
-    # Test Google API connection
-    google_ok = GoogleAuthService.test_connection
+    # Test Google API connection with proper error handling
+    google_ok = begin
+      # First check if credentials are valid before testing connection
+      status, msg = GoogleAuthService.validate_credentials!
+      puts msg
+
+      case status
+      when :created
+        @status_label.text = "📝 Credentials file created. Please fill it in and restart."
+        false
+      when :invalid
+        @status_label.text = "❌ Credentials file invalid. Please fix it and restart."
+        false
+      when :valid
+        # Only test connection if credentials are valid
+        GoogleAuthService.test_connection
+      end
+    rescue StandardError => e
+      puts "❌ Google API test failed: #{e.message}"
+      @status_label.text = "❌ Google API test failed"
+      false
+    end
 
     # Test Ollama AI service connection
-    ollama_ok = @ollama_service.test_connection
+    ollama_ok = begin
+      @ollama_service.test_connection
+    rescue StandardError => e
+      puts "❌ Ollama test failed: #{e.message}"
+      false
+    end
 
     # Update status based on test results
     if google_ok && ollama_ok
       @status_label.text = "✅ All connections successful!"
+    elsif !google_ok && !ollama_ok
+      @status_label.text = "❌ All connections failed. Check console for details."
     else
       @status_label.text = "⚠️ Some connections failed. Check console for details."
     end
