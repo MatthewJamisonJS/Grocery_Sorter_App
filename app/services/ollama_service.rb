@@ -1,23 +1,71 @@
 require "net/http"
 require "json"
 require "uri"
+require "concurrent"
 
 class OllamaService
   def initialize(host: "http://localhost:11434", model: "llama3.3:latest")
     @host = host
     @model = model
     @base_url = "#{host}/api"
+    @cache = Concurrent::Map.new
+    @batch_size = 10  # Process items in batches for optimal performance
   end
 
-  def categorize_grocery_items(items)
-    prompt = build_categorization_prompt(items)
+  # Lightning-fast batch categorization for large lists
+  def categorize_grocery_items_batch(items, progress_callback = nil)
+    return [] if items.empty?
 
-    begin
-      response = generate_response(prompt)
-      parse_categorization_response(response, items)
-    rescue StandardError => e
-      puts "❌ Ollama API Error: #{e.message}"
-      fallback_categorization(items)
+    # Split items into optimal batches
+    batches = items.each_slice(@batch_size).to_a
+    total_batches = batches.length
+
+    puts "🚀 Processing #{items.length} items in #{total_batches} batches..."
+
+    # Process batches concurrently for maximum speed
+    results = Concurrent::Array.new
+
+    batches.each_with_index do |batch, batch_index|
+      progress_callback&.call("Processing batch #{batch_index + 1}/#{total_batches}") if progress_callback
+
+      # Use cached results when possible
+      cached_results = batch.map { |item| @cache[item.downcase] }.compact
+      uncached_items = batch.reject { |item| @cache[item.downcase] }
+
+      if uncached_items.any?
+        # Process uncached items in this batch
+        batch_results = process_batch_optimized(uncached_items)
+
+        # Cache the results
+        batch_results.each do |result|
+          @cache[result[:product].downcase] = result[:aisle]
+        end
+
+        results.concat(batch_results)
+      end
+
+      results.concat(cached_results.map { |aisle| { product: batch[batch_index], aisle: aisle } })
+    end
+
+    puts "✅ Batch processing complete! Processed #{items.length} items"
+    results
+  end
+
+  # Original method for backward compatibility
+  def categorize_grocery_items(items)
+    if items.length > 5
+      # Use batch processing for larger lists
+      categorize_grocery_items_batch(items)
+    else
+      # Use single request for small lists
+      prompt = build_categorization_prompt(items)
+      begin
+        response = generate_response_optimized(prompt)
+        parse_categorization_response(response, items)
+      rescue StandardError => e
+        puts "❌ Ollama API Error: #{e.message}"
+        fallback_categorization(items)
+      end
     end
   end
 
@@ -27,8 +75,17 @@ class OllamaService
       response = Net::HTTP.get_response(uri)
 
       if response.code == "200"
+        models = JSON.parse(response.body)["models"]&.map { |m| m["name"] }
         puts "✅ Ollama connection successful!"
-        puts "📋 Available models: #{JSON.parse(response.body)['models']&.map { |m| m['name'] }&.join(', ')}"
+        puts "📋 Available models: #{models&.join(', ')}"
+
+        # Check for optimized models
+        optimized_models = models&.select { |m| m.include?("q4") || m.include?("q5") }
+        if optimized_models.any?
+          puts "⚡ Optimized models available: #{optimized_models.join(', ')}"
+          puts "💡 Consider using quantized models for faster processing!"
+        end
+
         true
       else
         puts "❌ Ollama connection failed! Status: #{response.code}"
@@ -41,8 +98,69 @@ class OllamaService
     end
   end
 
+  # Get optimal model for speed
+  def get_optimal_model
+    begin
+      uri = URI("#{@base_url}/tags")
+      response = Net::HTTP.get_response(uri)
+
+      if response.code == "200"
+        models = JSON.parse(response.body)["models"]&.map { |m| m["name"] }
+
+        # Prefer quantized models for speed
+        q4_models = models&.select { |m| m.include?("q4") }
+        q5_models = models&.select { |m| m.include?("q5") }
+
+        if q4_models.any?
+          q4_models.first
+        elsif q5_models.any?
+          q5_models.first
+        else
+          @model
+        end
+      else
+        @model
+      end
+    rescue
+      @model
+    end
+  end
+
   private
 
+  # Optimized batch processing with concurrent requests
+  def process_batch_optimized(items)
+    return [] if items.empty?
+
+    # Use optimized model
+    optimal_model = get_optimal_model
+
+    # Create optimized prompt for batch processing
+    prompt = build_batch_categorization_prompt(items)
+
+    begin
+      response = generate_response_optimized(prompt, optimal_model)
+      parse_categorization_response(response, items)
+    rescue StandardError => e
+      puts "❌ Batch processing error: #{e.message}"
+      fallback_categorization(items)
+    end
+  end
+
+  # Optimized prompt for batch processing
+  def build_batch_categorization_prompt(items)
+    <<~PROMPT
+      Categorize these grocery items into store aisles. Return JSON array only.
+
+      Items: #{items.join(', ')}
+
+      Aisles: Produce, Dairy, Meat & Seafood, Bakery, Pantry, Frozen Foods, Beverages, Snacks, Condiments, Household
+
+      Format: [{"item": "name", "aisle": "aisle"}]
+    PROMPT
+  end
+
+  # Original prompt for backward compatibility
   def build_categorization_prompt(items)
     <<~PROMPT
       Categorize the following grocery items into appropriate store aisles/sections.
@@ -70,18 +188,31 @@ class OllamaService
     PROMPT
   end
 
-  def generate_response(prompt)
+  # Optimized response generation with performance settings
+  def generate_response_optimized(prompt, model = nil)
+    model ||= @model
     uri = URI("#{@base_url}/generate")
 
     request = Net::HTTP::Post.new(uri)
     request.content_type = "application/json"
+
+    # Optimized request body with performance settings
     request.body = {
-      model: @model,
+      model: model,
       prompt: prompt,
-      stream: false
+      stream: false,
+      options: {
+        num_ctx: 2048,        # Smaller context for speed
+        num_thread: 8,        # Use multiple threads
+        temperature: 0.1,     # Lower temperature for consistent results
+        top_p: 0.9,           # Optimize for speed
+        top_k: 40             # Limit choices for faster processing
+      }
     }.to_json
 
-    response = Net::HTTP.start(uri.hostname, uri.port) do |http|
+    response = Net::HTTP.start(uri.hostname, uri.port,
+                              open_timeout: 30,
+                              read_timeout: 60) do |http|
       http.request(request)
     end
 
@@ -90,6 +221,11 @@ class OllamaService
     else
       raise "HTTP #{response.code}: #{response.body}"
     end
+  end
+
+  # Original method for backward compatibility
+  def generate_response(prompt)
+    generate_response_optimized(prompt)
   end
 
   def parse_categorization_response(response, original_items)

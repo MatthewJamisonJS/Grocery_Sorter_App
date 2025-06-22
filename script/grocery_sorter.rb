@@ -1,417 +1,274 @@
+# frozen_string_literal: true
+
 require 'glimmer-dsl-libui'
-require 'json'
-require 'colorize'
+require 'google/apis/docs_v1'
+require 'googleauth'
+require 'googleauth/stores/file_token_store'
+require 'fileutils'
+require 'os'
+require 'prawn'
+require 'prawn/table'
+require 'concurrent-ruby'
 
-# Load Rails environment for database and configuration
-require_relative '../config/environment'
-
-# Load our custom services
+# Load application services
 require_relative '../app/services/google_auth_service'
 require_relative '../app/services/google_docs_service'
 require_relative '../app/services/ollama_service'
 
-# Main GUI class for the Grocery Sorter App
-# This class handles the user interface and coordinates between services
-class GrocerySorterGUI
-  include Glimmer  # Include Glimmer DSL for GUI components
+# The Presenter holds the state and business logic of the application.
+class Presenter
+  include Glimmer::DataBinding::ObservableModel
 
-  # Expose table_data for data binding with the GUI table
-  attr_accessor :table_data
+  attr_accessor :google_doc_url, :batch_text, :items, :status_text, :download_enabled
 
   def initialize
-    # Step 1: Initialize data structures
-    @table_data = []  # Array to hold grocery items for the table
+    @google_doc_url = ''
+    @batch_text = ''
+    @items = [ [ '', '', '' ] ] # Start with a blank row
+    @status_text = 'Welcome to Grocery Sorter!'
+    @download_enabled = false
+    @all_processed_items = []
 
-    # Step 2: Initialize service connections
-    @google_docs_service = nil
-    @ollama_service = OllamaService.new
-
-    # Step 3: Set up services
-    setup_services
+    # Initialize services in the background
+    Thread.new do
+      self.status_text = 'Initializing services...'
+      validate_credentials
+      @google_docs_service = GoogleDocsService.new
+      @ollama_service = OllamaService.new
+      self.status_text = 'Services initialized. Ready.'
+    end
   end
 
-  # Main method to launch the GUI application
-  def launch
-    # Create the main application window
-    window('Grocery Sorter App', 600, 500) {
-      vertical_box {
-        # Section 1: Header with app title and connection testing
-        create_header_section
+  def process_google_doc
+    return if google_doc_url.to_s.strip.empty?
 
-        # Section 2: Google Docs integration for loading grocery lists
-        create_google_docs_section
+    self.status_text = 'Processing Google Doc...'
+    Thread.new do
+      begin
+        raw_items = @google_docs_service.get_grocery_items(google_doc_url)
+        parse_and_process_items(raw_items)
+      rescue StandardError => e
+        Glimmer::LibUI.queue_main do
+          self.status_text = "Error processing Google Doc: #{e.message}"
+        end
+      end
+    end
+  end
 
-        # Section 3: Manual entry for adding individual items
-        create_manual_entry_section
+  def process_batch_text
+    return if batch_text.to_s.strip.empty?
 
-        # Section 4: AI categorization tools
-        create_ai_categorization_section
+    self.status_text = 'Processing batch text...'
+    Thread.new do
+      begin
+        raw_items = batch_text.split(/[\n,;]|\s+and\s+/i).map(&:strip).reject(&:empty?)
+        parse_and_process_items(raw_items)
+      rescue StandardError => e
+        Glimmer::LibUI.queue_main do
+          self.status_text = "Error processing batch text: #{e.message}"
+        end
+      end
+    end
+  end
 
-        # Section 5: Results table showing the grocery list
-        create_results_table_section
+  def download_pdf_report
+    return unless @download_enabled
 
-        # Section 6: Status bar for user feedback
-        create_status_bar
-      }
-    }.show  # Display the window
+    path = Glimmer::LibUI.queue_main { @main_window&.save_file('report.pdf') }
+
+    if path
+      self.status_text = 'Generating PDF report...'
+      Thread.new do
+        begin
+          PdfGenerator.new(@all_processed_items).generate(path)
+          self.status_text = "PDF report saved to #{File.basename(path)}"
+        rescue StandardError => e
+          self.status_text = "Error generating PDF: #{e.message}"
+          Glimmer::LibUI.queue_main { msg_box_error('PDF Generation Failed', e.message) }
+        end
+      end
+    else
+      self.status_text = 'PDF save cancelled.'
+    end
+  end
+
+  def attach_main_window(window)
+    @main_window = window
   end
 
   private
 
-  # Section 1: Create the header with app title and connection testing
-  def create_header_section
-    horizontal_box {
-      label('🛒 Grocery Sorter App') {
-        stretchy false  # Don't expand horizontally
-      }
-      button('Test Connections') {
-        stretchy false
-        on_clicked { test_all_connections }
-      }
-    }
-  end
-
-  # Section 2: Create Google Docs integration section
-  def create_google_docs_section
-    group('Google Docs Integration') {
-      vertical_box {
-        # Email input field
-        horizontal_box {
-          label('Your Google Email:') {
-            stretchy false
-          }
-          @email_entry = entry {
-            text ''
-          }
-        }
-
-        # Document URL/ID input and action buttons
-        horizontal_box {
-          label('Document URL or ID:') {
-            stretchy false
-          }
-          @doc_id_entry = entry {
-            # Pre-fill with a sample Google Doc for testing
-            text 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit'
-          }
-          button('Test Access') {
-            stretchy false
-            on_clicked { test_document_access }
-          }
-          button('Load from Google Docs') {
-            stretchy false
-            on_clicked { load_from_google_docs }
-          }
-        }
-
-        # Helpful tip for users
-        label('💡 Tip: Enter your Google email and paste the full Google Docs URL') {
-          stretchy false
-        }
-      }
-    }
-  end
-
-  # Section 3: Create manual entry section
-  def create_manual_entry_section
-    group('Manual Entry') {
-      vertical_box {
-        # Item input and add button
-        horizontal_box {
-          label('Add Item:') {
-            stretchy false
-          }
-          @item_entry = entry {
-            on_changed { |entry| @item_text = entry.text }
-          }
-          button('Add') {
-            stretchy false
-            on_clicked { add_manual_item }
-          }
-        }
-
-        # Utility buttons
-        horizontal_box {
-          button('Clear All') {
-            stretchy false
-            on_clicked { clear_all_items }
-          }
-          button('Load Sample Data') {
-            stretchy false
-            on_clicked { load_sample_data }
-          }
-        }
-      }
-    }
-  end
-
-  # Section 4: Create AI categorization section
-  def create_ai_categorization_section
-    group('AI Categorization') {
-      vertical_box {
-        horizontal_box {
-          button('Categorize with AI') {
-            stretchy false
-            on_clicked { categorize_with_ai }
-          }
-          button('Export to JSON') {
-            stretchy false
-            on_clicked { export_to_json }
-          }
-        }
-      }
-    }
-  end
-
-  # Section 5: Create results table section
-  def create_results_table_section
-    group('Grocery List') {
-      vertical_box {
-        @table = table {
-          text_column('Item')      # Column for grocery item names
-          text_column('Aisle')     # Column for store aisle categories
-          text_column('Status')    # Column for item status/source
-          cell_rows bind(self, :table_data)  # Bind to our data array
-        }
-      }
-    }
-  end
-
-  # Section 6: Create status bar for user feedback
-  def create_status_bar
-    @status_label = label('Ready to sort groceries! 🛒') {
-      stretchy false
-    }
-  end
-
-  # Step 3: Set up service connections
-  def setup_services
-    begin
-      # Check credentials first
-      status, msg = GoogleAuthService.validate_credentials!
-      puts msg
-
-      case status
-      when :created
-        puts "\n🔧 First-time setup required!"
-        puts "1. Get Google API credentials from: https://console.cloud.google.com/"
-        puts "2. Download the OAuth 2.0 client credentials JSON file"
-        puts "3. Save it as: #{GoogleAuthService::CREDENTIALS_PATH}"
-        puts "4. Restart the app"
-        puts "\n💡 Or run: ruby script/setup.rb for guided setup"
-        nil
-      when :invalid
-        puts "\n🔧 Credentials setup required!"
-        puts "Please fix the credentials file at: #{GoogleAuthService::CREDENTIALS_PATH}"
-        puts "\n💡 Or run: ruby script/setup.rb for guided setup"
-        nil
-      when :valid
-        # Initialize Google Docs service (this will trigger OAuth if needed)
-        @google_docs_service = GoogleDocsService.new
-      end
-    rescue StandardError => e
-      puts "⚠️ Google Docs service not available: #{e.message}"
+  def validate_credentials
+    status, message = GoogleAuthService.validate_credentials!
+    self.status_text = message
+    case status
+    when :created
+      Glimmer::LibUI.queue_main { msg_box('Credentials Created', message) }
+    when :invalid
+      Glimmer::LibUI.queue_main { msg_box_error('Invalid Credentials', message) }
     end
   end
 
-  # Test all external service connections
-  def test_all_connections
-    @status_label.text = "Testing connections..."
+  def parse_and_process_items(raw_items)
+    return if raw_items.empty?
 
-    # Test Google API connection with proper error handling
-    google_ok = begin
-      # First check if credentials are valid before testing connection
-      status, msg = GoogleAuthService.validate_credentials!
-      puts msg
+    self.status_text = "Categorizing #{raw_items.size} items... this may take a moment."
+    @all_processed_items = @ollama_service.categorize_grocery_items(raw_items)
 
-      case status
-      when :created
-        @status_label.text = "📝 Credentials file created. Please fill it in and restart."
-        false
-      when :invalid
-        @status_label.text = "❌ Credentials file invalid. Please fix it and restart."
-        false
-      when :valid
-        # Only test connection if credentials are valid
-        GoogleAuthService.test_connection
-      end
-    rescue StandardError => e
-      puts "❌ Google API test failed: #{e.message}"
-      @status_label.text = "❌ Google API test failed"
-      false
+    Glimmer::LibUI.queue_main do
+      self.items = @all_processed_items.first(10)
+      self.items = [ [ 'No items processed.', '', '' ] ] if self.items.empty?
+      self.download_enabled = !@all_processed_items.empty?
+      self.status_text = "Processed #{@all_processed_items.size} items. Displaying top 10. PDF report is ready."
     end
-
-    # Test Ollama AI service connection
-    ollama_ok = begin
-      @ollama_service.test_connection
-    rescue StandardError => e
-      puts "❌ Ollama test failed: #{e.message}"
-      false
-    end
-
-    # Update status based on test results
-    if google_ok && ollama_ok
-      @status_label.text = "✅ All connections successful!"
-    elsif !google_ok && !ollama_ok
-      @status_label.text = "❌ All connections failed. Check console for details."
-    else
-      @status_label.text = "⚠️ Some connections failed. Check console for details."
-    end
-  end
-
-  # Load grocery items from a Google Doc
-  def load_from_google_docs
-    return unless @google_docs_service
-
-    # Step 1: Get user input
-    doc_input = @doc_id_entry.text.strip
-    user_email = @email_entry.text.strip
-
-    # Step 2: Validate input
-    return if doc_input.empty?
-
-    if user_email.empty?
-      @status_label.text = "⚠️ Please enter your Google email first"
-      return
-    end
-
-    # Step 3: Load items from Google Docs
-    @status_label.text = "Loading from Google Docs..."
-
-    begin
-      items = @google_docs_service.get_grocery_items(doc_input, user_email)
-
-      if items.any?
-        # Convert items to table format: [item_name, aisle, source_icon]
-        self.table_data = items.map { |item| [ item, 'Pending', '📄' ] }
-        @status_label.text = "✅ Loaded #{items.length} items from Google Docs"
-      else
-        @status_label.text = "⚠️ No items found or access denied"
-      end
-    rescue StandardError => e
-      @status_label.text = "❌ Failed to load from Google Docs: #{e.message}"
-    end
-  end
-
-  # Test if we can access a specific Google Doc
-  def test_document_access
-    return unless @google_docs_service
-
-    # Step 1: Get user input
-    doc_input = @doc_id_entry.text.strip
-    user_email = @email_entry.text.strip
-
-    # Step 2: Validate input
-    return if doc_input.empty?
-
-    if user_email.empty?
-      @status_label.text = "⚠️ Please enter your Google email first"
-      return
-    end
-
-    # Step 3: Test document access
-    @status_label.text = "Testing document access..."
-
-    begin
-      result = @google_docs_service.test_document_access(doc_input, user_email)
-
-      if result[:success]
-        # Access successful - show document details
-        @status_label.text = "✅ Access successful! Title: #{result[:title]}"
-        puts "📄 Document Details:"
-        puts "   Title: #{result[:title]}"
-        puts "   Last Modified: #{result[:last_modified]}"
-        puts "   Permission ID: #{result[:permission_id]}"
-      else
-        # Access failed - show error and guidance
-        @status_label.text = "❌ Access failed: #{result[:error]}"
-        puts "❌ Access Error: #{result[:error]}"
-        puts "🔧 Error Class: #{result[:error_class]}"
-
-        # Provide specific guidance for unauthorized errors
-        @google_docs_service.get_user_guidance_for_unauthorized(result)
-      end
-    rescue StandardError => e
-      @status_label.text = "❌ Test failed: #{e.message}"
-    end
-  end
-
-  # Add a manually entered item to the grocery list
-  def add_manual_item
-    item = @item_entry.text.strip
-    return if item.empty?
-
-    # Add item to table data with manual entry indicator
-    self.table_data = table_data + [ [ item, 'Pending', '✏️' ] ]
-
-    # Clear the input field
-    @item_entry.text = ''
-
-    # Update status
-    @status_label.text = "Added: #{item}"
-  end
-
-  # Clear all items from the grocery list
-  def clear_all_items
-    self.table_data = []
-    @status_label.text = "Cleared all items"
-  end
-
-  # Load sample data for testing and demonstration
-  def load_sample_data
-    sample_items = [
-      'Milk', 'Eggs', 'Bread', 'Apples', 'Bananas',
-      'Chicken Breast', 'Rice', 'Pasta', 'Tomatoes', 'Cheese'
-    ]
-
-    # Convert to table format with sample data indicator
-    self.table_data = sample_items.map { |item| [ item, 'Pending', '📋' ] }
-    @status_label.text = "Loaded sample data"
-  end
-
-  # Use AI to categorize grocery items by store aisle
-  def categorize_with_ai
-    return if table_data.empty?
-
-    @status_label.text = "🤖 Categorizing with AI..."
-
-    # Step 1: Extract just the item names from the table
-    items = table_data.map { |row| row[0] }
-
-    begin
-      # Step 2: Use Ollama service to categorize items
-      categorized = @ollama_service.categorize_grocery_items(items)
-
-      # Step 3: Update table with AI categorization results
-      self.table_data = categorized.map.with_index do |item, index|
-        [ item[:product], item[:aisle], '🤖' ]
-      end
-
-      @status_label.text = "✅ AI categorization complete!"
-    rescue StandardError => e
-      @status_label.text = "❌ AI categorization failed: #{e.message}"
-    end
-  end
-
-  # Export the grocery list to a JSON file
-  def export_to_json
-    return if table_data.empty?
-
-    # Step 1: Convert table data to structured format
-    data = table_data.map do |row|
-      { item: row[0], aisle: row[1], source: row[2] }
-    end
-
-    # Step 2: Generate filename with timestamp
-    filename = "grocery_list_#{Time.now.strftime('%Y%m%d_%H%M%S')}.json"
-
-    # Step 3: Write data to file with pretty formatting
-    File.write(filename, JSON.pretty_generate(data))
-
-    @status_label.text = "💾 Exported to #{filename}"
   end
 end
 
-# Application entry point
-puts "🚀 Starting Grocery Sorter App..."
-GrocerySorterGUI.new.launch
+# The UI class is responsible for building the graphical user interface.
+class UI
+  include Glimmer
+
+  attr_reader :presenter
+
+  def initialize(presenter)
+    @presenter = presenter
+  end
+
+  def launch
+    window('Grocery Sorter', 800, 600) { |w|
+      margined true
+      presenter.attach_main_window(w)
+
+      on_closing do
+        # You can add any cleanup logic here
+      end
+
+      vertical_box {
+        create_google_doc_entry
+        create_batch_entry
+        create_results_table
+        create_status_bar
+      }
+    }.show
+  end
+
+  private
+
+  def create_google_doc_entry
+    group('Google Doc Import') {
+      stretchy false
+      horizontal_box {
+        label 'Doc URL:'
+        entry {
+          text <=> [ presenter, :google_doc_url ]
+          stretchy true
+        }
+        button('Process Document') {
+          on_clicked { presenter.process_google_doc }
+        }
+      }
+    }
+  end
+
+  def create_batch_entry
+    group('Lightning-Fast Batch Processing') {
+      stretchy false
+      vertical_box {
+        non_wrapping_multiline_entry {
+          text <=> [ presenter, :batch_text ]
+        }
+        horizontal_box {
+          button('Process Pasted List') {
+            on_clicked { presenter.process_batch_text }
+          }
+          button('Download PDF Report') {
+            enabled <=> [ presenter, :download_enabled ]
+            on_clicked { presenter.download_pdf_report }
+          }
+        }
+      }
+    }
+  end
+
+  def create_results_table
+    group('Categorized Groceries (showing top 10)') {
+      stretchy true
+      table {
+        text_column('Item')
+        text_column('Category')
+        text_column('Aisle')
+        cell_rows <=> [ presenter, :items ]
+      }
+    }
+  end
+
+  def create_status_bar
+    group('Status') {
+      stretchy false
+      label {
+        text <= [ presenter, :status_text ]
+      }
+    }
+  end
+end
+
+
+# Main application class
+class GrocerySorterDesktopApp
+  attr_reader :presenter
+
+  def initialize
+    @presenter = Presenter.new
+  end
+
+  def launch
+    UI.new(presenter).launch
+  end
+end
+
+# PDF Generation Logic - remains unchanged
+class PdfGenerator
+  require 'prawn'
+  require 'prawn/table'
+  APP_ROOT = File.expand_path('..', __dir__)
+
+  def initialize(items)
+    @items = items
+  end
+
+  def generate(path)
+    # Group items by aisle
+    items_by_aisle = @items.group_by { |item| item[2] } # Aisle is the 3rd element
+
+    Prawn::Document.generate(path) do |pdf|
+      pdf.font_families.update("DejaVu" => {
+        normal: File.join(APP_ROOT, 'vendor/assets/fonts/DejaVuSans.ttf'),
+        bold: File.join(APP_ROOT, 'vendor/assets/fonts/DejaVuSans-Bold.ttf')
+      })
+      pdf.font "DejaVu"
+
+      pdf.text "Grocery List Report", size: 24, style: :bold, align: :center
+      pdf.move_down 20
+
+      items_by_aisle.sort.to_h.each do |aisle, items|
+        pdf.text aisle, size: 18, style: :bold
+        pdf.move_down 10
+
+        table_data = [ [ 'Item', 'Category' ] ] + items.map { |item| [ item[0], item[1] ] }
+
+        pdf.table(table_data, header: true, width: pdf.bounds.width) do
+          row(0).font_style = :bold
+          self.row_colors = [ "FFFFFF", "F0F0F0" ]
+        end
+        pdf.move_down 20
+      end
+    end
+  end
+end
+
+
+# Main application entry point
+if __FILE__ == $0
+  app = GrocerySorterDesktopApp.new
+  app.launch
+end

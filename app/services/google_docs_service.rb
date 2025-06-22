@@ -131,33 +131,24 @@ class GoogleDocsService
 
   # Step 1 of get_grocery_items: Extract document ID from various input formats
   def extract_document_id(input)
-    # If input is already just an ID (no slashes or dots), return as-is
-    return input if input.match?(/^[a-zA-Z0-9_-]+$/)
-
-    # Define URL patterns to extract document ID from
+    # First, try to extract from common URL formats
     url_patterns = [
       # Standard Google Docs URL
       %r{https://docs\.google\.com/document/d/([a-zA-Z0-9_-]+)},
-      # Google Docs URL with additional parameters
-      %r{https://docs\.google\.com/document/d/([a-zA-Z0-9_-]+)/edit},
-      %r{https://docs\.google\.com/document/d/([a-zA-Z0-9_-]+)/view},
       # Drive URL format
       %r{https://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)},
       # Any URL with document ID pattern
       %r{/d/([a-zA-Z0-9_-]+)}
     ]
-
-    # Try each pattern to extract the document ID
     url_patterns.each do |pattern|
       match = input.match(pattern)
-      if match
-        doc_id = match[1]
-        return doc_id
-      end
+      return match[1] if match
     end
 
-    # If no pattern matches, assume it's already an ID
-    input
+    # If no URL pattern matches, assume the first part of the input
+    # before a slash or question mark is the ID.
+    # This handles cases where a user pastes a partial URL or just the ID.
+    input.split(/[?\/]/).first
   end
 
   # Step 2 of get_grocery_items: Fetch document from Google Docs API
