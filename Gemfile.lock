@@ -312,7 +312,7 @@ GEM
       date
       stringio
     public_suffix (6.0.2)
-    puma (6.6.0)
+    puma (7.0.0)
       nio4r (~> 2.0)
     puts_debuggerer (1.0.1)
       awesome_print (~> 1.9.2)
